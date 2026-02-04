@@ -1,0 +1,52 @@
+[project]
+name = "aletheia"
+version = "0.1.0"
+description = "Personal knowledge management and spaced repetition system for technical learning"
+readme = "README.md"
+authors = [
+    { name = "choo8", email = "joshua.choo.1993@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.0",
+    "typer>=0.9.0",
+    "rich>=13.0",
+    "fsrs>=4.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.1.0",
+]
+web = [
+    "fastapi>=0.109.0",
+    "uvicorn>=0.27.0",
+    "jinja2>=3.1.0",
+    "python-multipart>=0.0.6",
+]
+llm = [
+    "litellm>=1.0",
+]
+all = [
+    "aletheia[dev,web,llm]",
+]
+
+[project.scripts]
+aletheia = "aletheia.cli.main:app"
+
+[build-system]
+requires = ["uv_build>=0.9.22,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
