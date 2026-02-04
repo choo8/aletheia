@@ -5,7 +5,6 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich import print as rprint
@@ -97,7 +96,7 @@ def add(
 
     if card:
         path = storage.save_card(card)
-        rprint(f"\n[green]Card saved![/green]")
+        rprint("\n[green]Card saved![/green]")
         rprint(f"  ID: {card.id}")
         rprint(f"  Path: {path}")
 
@@ -250,7 +249,9 @@ def _add_system_design(quick: bool) -> SystemDesignCard | None:
     use_cases_str = typer.prompt("Use cases (comma-separated)", default="")
     use_cases = [u.strip() for u in use_cases_str.split(",") if u.strip()]
 
-    anti_patterns_str = typer.prompt("Anti-patterns / when NOT to use (comma-separated)", default="")
+    anti_patterns_str = typer.prompt(
+        "Anti-patterns / when NOT to use (comma-separated)", default=""
+    )
     anti_patterns = [a.strip() for a in anti_patterns_str.split(",") if a.strip()]
 
     tags_str = typer.prompt("Tags (comma-separated)", default="")
@@ -286,18 +287,18 @@ def _add_system_design(quick: bool) -> SystemDesignCard | None:
 
 @app.command("list")
 def list_cards(
-    card_type: Optional[str] = typer.Option(
+    card_type: str | None = typer.Option(
         None,
         "--type",
         "-t",
         help="Filter by card type",
     ),
-    tag: Optional[str] = typer.Option(
+    tag: str | None = typer.Option(
         None,
         "--tag",
         help="Filter by tag",
     ),
-    maturity: Optional[str] = typer.Option(
+    maturity: str | None = typer.Option(
         None,
         "--maturity",
         "-m",
@@ -410,7 +411,8 @@ def _display_card(card, full: bool = False) -> None:
             content += f"\n[dim]Patterns: {', '.join(card.patterns)}[/dim]"
 
         if hasattr(card, "complexity") and card.complexity:
-            content += f"\n[dim]Complexity: Time {card.complexity.time}, Space {card.complexity.space}[/dim]"
+            c = card.complexity
+            content += f"\n[dim]Complexity: Time {c.time}, Space {c.space}[/dim]"
 
         if hasattr(card, "intuition") and card.intuition:
             content += f"\n\n[bold]Intuition:[/bold] {card.intuition}"
@@ -434,9 +436,6 @@ def edit(
     if card is None:
         rprint(f"[red]Card not found: {card_id}[/red]")
         raise typer.Exit(1)
-
-    # Convert to editable format
-    card_dict = card.model_dump(mode="json")
 
     # Create a simplified editable version
     editable = {

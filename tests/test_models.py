@@ -1,11 +1,9 @@
 """Tests for Aletheia models."""
 
 import pytest
-
 from aletheia.core.models import (
     CardType,
     Complexity,
-    CreationMode,
     DSAConceptCard,
     DSAProblemCard,
     LeetcodeSource,

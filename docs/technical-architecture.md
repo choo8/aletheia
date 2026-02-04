@@ -866,4 +866,3 @@ aletheia/
     ├── product-vision.md
     └── technical-architecture.md
 ```
-

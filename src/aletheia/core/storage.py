@@ -2,10 +2,10 @@
 
 import json
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator
 
 from aletheia.core.models import AnyCard, CardType, card_from_dict
 
@@ -224,9 +224,7 @@ class ReviewDatabase:
     def get_card_state(self, card_id: str) -> dict | None:
         """Get FSRS state for a card."""
         with self._connection() as conn:
-            row = conn.execute(
-                "SELECT * FROM card_states WHERE card_id = ?", (card_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM card_states WHERE card_id = ?", (card_id,)).fetchone()
             return dict(row) if row else None
 
     def upsert_card_state(
@@ -245,7 +243,8 @@ class ReviewDatabase:
             conn.execute(
                 """
                 INSERT INTO card_states (
-                    card_id, stability, difficulty, due, last_review, reps, lapses, state, updated_at
+                    card_id, stability, difficulty, due, last_review,
+                    reps, lapses, state, updated_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(card_id) DO UPDATE SET
                     stability = excluded.stability,
