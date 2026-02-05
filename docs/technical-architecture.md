@@ -763,13 +763,13 @@ aletheia sync --pull               # Git pull
 - [x] SQLite setup for reviews/state
 - [x] Basic CLI: `add`, `list`, `show`, `edit`, `search`, `stats`
 
-### Phase 2: Review System
-- [ ] FSRS integration (py-fsrs)
-- [ ] Review log storage
-- [ ] CLI review command
-- [ ] FastAPI server setup
-- [ ] HTMX templates for review UI
-- [ ] KaTeX integration
+### Phase 2: Review System ✓
+- [x] FSRS integration (py-fsrs)
+- [x] Review log storage
+- [x] CLI review command
+- [x] FastAPI server setup
+- [x] HTMX templates for review UI
+- [x] KaTeX integration
 
 ### Phase 3: LLM Integration
 - [ ] litellm setup
