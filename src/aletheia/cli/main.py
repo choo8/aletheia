@@ -22,6 +22,7 @@ from aletheia.core.models import (
     Maturity,
     SystemDesignCard,
 )
+from aletheia.core.scheduler import AletheiaScheduler, ReviewRating
 from aletheia.core.storage import AletheiaStorage
 
 app = typer.Typer(
@@ -544,6 +545,158 @@ def search(
     for card in results:
         _display_card(card)
         rprint("")
+
+
+# ============================================================================
+# REVIEW command
+# ============================================================================
+
+
+@app.command()
+def review(
+    limit: int = typer.Option(
+        20,
+        "--limit",
+        "-l",
+        help="Maximum cards to review",
+    ),
+    new_cards: int = typer.Option(
+        5,
+        "--new",
+        "-n",
+        help="Maximum new cards to include",
+    ),
+) -> None:
+    """Start an interactive review session."""
+    storage = get_storage()
+    scheduler = AletheiaScheduler(storage.db)
+
+    # Get cards to review: due cards + new cards
+    due_ids = scheduler.get_due_cards(limit)
+    new_ids = scheduler.get_new_cards(new_cards)
+
+    # Combine, avoiding duplicates
+    card_ids = due_ids + [c for c in new_ids if c not in due_ids]
+
+    if not card_ids:
+        rprint("[green]No cards due for review![/green]")
+        return
+
+    rprint(f"\n[bold]Review Session[/bold]: {len(card_ids)} card(s)\n")
+
+    reviewed = 0
+    for i, card_id in enumerate(card_ids, 1):
+        card = storage.load_card(card_id)
+        if not card:
+            continue
+
+        # Display card front
+        name = getattr(card, "name", None)
+        title = f"Card {i}/{len(card_ids)}"
+        if name:
+            title += f" - {name}"
+
+        console.print(Panel(card.front, title=title, border_style="blue"))
+
+        # Wait for reveal
+        typer.prompt("\n[Press Enter to reveal answer]", default="", show_default=False)
+
+        # Display answer
+        console.print(Panel(card.back, title="Answer", border_style="green"))
+
+        # Show additional context if available
+        if hasattr(card, "intuition") and card.intuition:
+            rprint(f"[dim]Intuition: {card.intuition}[/dim]")
+
+        # Get rating
+        rating = _prompt_rating()
+        if rating is None:
+            rprint("\n[yellow]Session ended early.[/yellow]")
+            break
+
+        # Process review
+        result = scheduler.review_card(card_id, rating)
+        rprint(f"[dim]Next review: {result.due_next.strftime('%Y-%m-%d %H:%M')}[/dim]\n")
+        reviewed += 1
+
+    # Session summary
+    rprint("\n[bold green]Session complete![/bold green]")
+    rprint(f"Reviewed {reviewed} card(s).")
+
+    # Show updated stats
+    db_stats = storage.db.get_stats()
+    rprint(f"[dim]Total reviews: {db_stats['total_reviews']}[/dim]")
+
+
+def _prompt_rating() -> ReviewRating | None:
+    """Prompt user for rating."""
+    rprint("\n[bold]Rate this card:[/bold]")
+    rprint(
+        "  [red]1[/red] Again (forgot)  "
+        "[yellow]2[/yellow] Hard  "
+        "[green]3[/green] Good  "
+        "[cyan]4[/cyan] Easy  "
+        "[dim]q[/dim] Quit"
+    )
+
+    while True:
+        choice = typer.prompt("Rating", default="3")
+        if choice.lower() == "q":
+            return None
+        try:
+            rating_value = int(choice)
+            if 1 <= rating_value <= 4:
+                return ReviewRating(rating_value)
+        except ValueError:
+            pass
+        rprint("[red]Invalid choice. Enter 1-4 or q to quit.[/red]")
+
+
+# ============================================================================
+# SERVE command
+# ============================================================================
+
+
+@app.command()
+def serve(
+    port: int = typer.Option(
+        8000,
+        "--port",
+        "-p",
+        help="Port to run the server on",
+    ),
+    host: str = typer.Option(
+        "127.0.0.1",
+        "--host",
+        "-h",
+        help="Host to bind to",
+    ),
+    reload: bool = typer.Option(
+        False,
+        "--reload",
+        "-r",
+        help="Enable auto-reload for development",
+    ),
+) -> None:
+    """Start the web server for review sessions."""
+    try:
+        import uvicorn
+    except ImportError:
+        rprint("[red]Web dependencies not installed.[/red]")
+        rprint("Install with: pip install aletheia[web]")
+        raise typer.Exit(1)
+
+    rprint("\n[bold]Starting Aletheia web server[/bold]")
+    rprint(f"  URL: http://{host}:{port}")
+    rprint(f"  Review: http://{host}:{port}/review")
+    rprint("\n[dim]Press Ctrl+C to stop[/dim]\n")
+
+    uvicorn.run(
+        "aletheia.web.app:app",
+        host=host,
+        port=port,
+        reload=reload,
+    )
 
 
 # ============================================================================

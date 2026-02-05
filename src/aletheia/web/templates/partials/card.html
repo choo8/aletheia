@@ -1,0 +1,69 @@
+{% if card %}
+<div class="bg-white rounded-lg shadow-lg p-6">
+    <!-- Progress indicator -->
+    {% if remaining %}
+    <div class="text-sm text-gray-500 mb-4">
+        {{ remaining }} card{% if remaining != 1 %}s{% endif %} remaining
+    </div>
+    {% endif %}
+
+    <!-- Card type badge -->
+    <div class="mb-4">
+        <span class="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">
+            {{ card.type.value }}
+        </span>
+        {% if card.name is defined and card.name %}
+        <span class="text-gray-600 ml-2 font-medium">{{ card.name }}</span>
+        {% endif %}
+    </div>
+
+    <!-- Question (Front) -->
+    <div class="mb-6">
+        <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Question</h3>
+        <div class="card-content text-lg text-gray-900">{{ card.front | katex | safe }}</div>
+    </div>
+
+    {% if show_answer %}
+    <!-- Answer (Back) -->
+    <div class="mb-6 pt-4 border-t border-gray-200">
+        <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Answer</h3>
+        <div class="card-content text-lg text-gray-900">{{ card.back | katex | safe }}</div>
+    </div>
+
+    <!-- Additional context -->
+    {% if card.intuition is defined and card.intuition %}
+    <div class="mb-6 text-gray-600 italic">
+        <span class="font-medium">Intuition:</span> {{ card.intuition }}
+    </div>
+    {% endif %}
+
+    <!-- Rating buttons -->
+    {% include "partials/rating.html" %}
+
+    {% else %}
+    <!-- Reveal button -->
+    <button
+        hx-post="/review/reveal/{{ card.id }}"
+        hx-target="#review-container"
+        hx-swap="innerHTML"
+        class="w-full bg-blue-600 text-white py-4 rounded-lg hover:bg-blue-700 transition-colors font-medium text-lg"
+    >
+        Reveal Answer
+        <span class="htmx-indicator ml-2">...</span>
+    </button>
+    {% endif %}
+</div>
+
+{% else %}
+<!-- No cards / Session complete -->
+<div class="text-center py-12">
+    <div class="text-6xl mb-4">🎉</div>
+    <h2 class="text-2xl font-bold text-green-600 mb-2">
+        {% if message %}{{ message }}{% else %}All done!{% endif %}
+    </h2>
+    <p class="text-gray-600 mb-6">Great job completing your review session.</p>
+    <a href="/review" class="inline-block bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors">
+        Start New Session
+    </a>
+</div>
+{% endif %}
