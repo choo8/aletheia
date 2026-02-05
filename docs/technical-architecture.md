@@ -11,7 +11,7 @@ This document describes the technical architecture for Aletheia, a personal know
 - FSRS algorithm with default parameters
 - LLM-assisted card creation (Modes 1 & 4)
 - LaTeX rendering (server-side KaTeX)
-- Free hosting (Koyeb)
+- Free/cheap hosting (Oracle Cloud, GCP, AWS, or Hetzner)
 
 ---
 
@@ -756,12 +756,12 @@ aletheia sync --pull               # Git pull
 
 ## Implementation Phases
 
-### Phase 1: Core Foundation
-- [ ] Project setup (pyproject.toml, structure)
-- [ ] Card models (pydantic)
-- [ ] JSON file storage for cards
-- [ ] SQLite setup for reviews/state
-- [ ] Basic CLI: `add`, `list`, `show`, `edit`
+### Phase 1: Core Foundation ✓
+- [x] Project setup (pyproject.toml, structure)
+- [x] Card models (pydantic)
+- [x] JSON file storage for cards
+- [x] SQLite setup for reviews/state
+- [x] Basic CLI: `add`, `list`, `show`, `edit`, `search`, `stats`
 
 ### Phase 2: Review System
 - [ ] FSRS integration (py-fsrs)
