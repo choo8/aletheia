@@ -1,0 +1,135 @@
+"""Tests for Aletheia models."""
+
+import pytest
+from aletheia.core.models import (
+    CardType,
+    Complexity,
+    DSAConceptCard,
+    DSAProblemCard,
+    LeetcodeSource,
+    Maturity,
+    SystemDesignCard,
+    card_from_dict,
+)
+
+
+class TestDSAProblemCard:
+    """Tests for DSAProblemCard."""
+
+    def test_create_minimal(self):
+        """Test creating a minimal DSA problem card."""
+        card = DSAProblemCard(
+            front="What is the time complexity of binary search?",
+            back="O(log n)",
+        )
+        assert card.type == CardType.DSA_PROBLEM
+        assert card.front == "What is the time complexity of binary search?"
+        assert card.back == "O(log n)"
+        assert card.maturity == Maturity.ACTIVE
+        assert card.id is not None
+
+    def test_create_full(self):
+        """Test creating a full DSA problem card."""
+        card = DSAProblemCard(
+            front="How do you trap rain water in O(n) time and O(1) space?",
+            back="Use two pointers from both ends",
+            problem_source=LeetcodeSource(
+                platform_id="42",
+                title="Trapping Rain Water",
+                difficulty="hard",
+            ),
+            patterns=["two-pointers", "monotonic-stack"],
+            data_structures=["array"],
+            complexity=Complexity(time="O(n)", space="O(1)"),
+            intuition="Process from the side with smaller max",
+            edge_cases=["empty array", "single element"],
+            tags=["#interview-classic"],
+            taxonomy=["dsa", "arrays"],
+        )
+        assert card.patterns == ["two-pointers", "monotonic-stack"]
+        assert card.complexity.time == "O(n)"
+        assert card.problem_source.difficulty == "hard"
+
+    def test_touch_updates_metadata(self):
+        """Test that touch() updates lifecycle metadata."""
+        card = DSAProblemCard(front="Q", back="A")
+        original_count = card.lifecycle.edit_count
+        card.touch()
+        assert card.lifecycle.edit_count == original_count + 1
+
+
+class TestDSAConceptCard:
+    """Tests for DSAConceptCard."""
+
+    def test_create(self):
+        """Test creating a DSA concept card."""
+        card = DSAConceptCard(
+            name="Monotonic Stack",
+            front="When would you use a monotonic stack?",
+            back="For next greater/smaller element problems",
+            definition="A stack that maintains elements in sorted order",
+            common_patterns=["next greater element", "histogram"],
+        )
+        assert card.type == CardType.DSA_CONCEPT
+        assert card.name == "Monotonic Stack"
+
+
+class TestSystemDesignCard:
+    """Tests for SystemDesignCard."""
+
+    def test_create(self):
+        """Test creating a system design card."""
+        card = SystemDesignCard(
+            name="Leader-Follower Replication",
+            front="When to use leader-follower replication?",
+            back="Read-heavy workloads with eventual consistency acceptable",
+            use_cases=["read replicas", "reporting databases"],
+            anti_patterns=["write-heavy workloads"],
+        )
+        assert card.type == CardType.SYSTEM_DESIGN
+        assert card.name == "Leader-Follower Replication"
+
+
+class TestCardFromDict:
+    """Tests for card_from_dict factory function."""
+
+    def test_dsa_problem(self):
+        """Test loading DSA problem from dict."""
+        data = {
+            "type": "dsa-problem",
+            "front": "Q",
+            "back": "A",
+            "patterns": ["two-pointers"],
+        }
+        card = card_from_dict(data)
+        assert isinstance(card, DSAProblemCard)
+        assert card.patterns == ["two-pointers"]
+
+    def test_dsa_concept(self):
+        """Test loading DSA concept from dict."""
+        data = {
+            "type": "dsa-concept",
+            "name": "Binary Search",
+            "front": "Q",
+            "back": "A",
+        }
+        card = card_from_dict(data)
+        assert isinstance(card, DSAConceptCard)
+        assert card.name == "Binary Search"
+
+    def test_system_design(self):
+        """Test loading system design card from dict."""
+        data = {
+            "type": "system-design",
+            "name": "CAP Theorem",
+            "front": "Q",
+            "back": "A",
+        }
+        card = card_from_dict(data)
+        assert isinstance(card, SystemDesignCard)
+
+    def test_unknown_type_raises(self):
+        """Test that unknown type raises ValueError."""
+        data = {"type": "unknown", "front": "Q", "back": "A"}
+        with pytest.raises(ValueError, match="Unknown card type"):
+            card_from_dict(data)
