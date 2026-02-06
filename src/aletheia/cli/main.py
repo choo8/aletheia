@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 
 import typer
+from dotenv import load_dotenv
 from rich import print as rprint
 from rich.console import Console
 from rich.panel import Panel
@@ -28,6 +29,8 @@ from aletheia.core.models import (
 from aletheia.core.scheduler import AletheiaScheduler, ReviewRating
 from aletheia.core.storage import AletheiaStorage
 from aletheia.llm import LLMError, LLMService
+
+load_dotenv()
 
 app = typer.Typer(
     name="aletheia",

@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -11,6 +12,8 @@ from aletheia.web.routes import review_router
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
+    load_dotenv()
+
     app = FastAPI(
         title="Aletheia",
         description="Spaced repetition for technical learning",
