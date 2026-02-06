@@ -28,7 +28,7 @@ litellm wrapper with core methods:
 
 ```python
 class LLMService:
-    def __init__(self, model: str = "claude-sonnet-4-20250514")
+    def __init__(self, model: str = "gemini/gemini-3-flash-preview")
     async def guided_extraction(self, context: str, domain: str) -> list[str]
     async def guided_edit_extraction(self, existing_card_content: str, new_context: str, domain: str) -> list[str]
     async def quality_feedback(self, card: Card) -> QualityFeedback
@@ -235,9 +235,11 @@ Already in `pyproject.toml`:
 llm = ["litellm>=1.0"]
 ```
 
-Environment variables:
-- `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` - API key for LLM provider
+Environment variables (can be set in a `.env` file in the project root):
+- `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` or `GEMINI_API_KEY` - API key for LLM provider
 - `ALETHEIA_LLM_MODEL` - Override default model (optional)
+- `ALETHEIA_DATA_DIR` - Custom data directory (optional)
+- `ALETHEIA_STATE_DIR` - Custom state directory (optional)
 
 ---
 

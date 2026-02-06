@@ -41,6 +41,18 @@ uv sync
 pip install -e .
 ```
 
+## Configuration
+
+Aletheia loads environment variables from a `.env` file in the project root automatically. Available settings:
+
+```bash
+# .env
+ALETHEIA_LLM_MODEL=gemini/gemini-3-flash-preview  # LLM model (default)
+ALETHEIA_DATA_DIR=./data                           # Card storage directory
+ALETHEIA_STATE_DIR=./.aletheia                     # Local state directory
+GEMINI_API_KEY=...                                 # Or ANTHROPIC_API_KEY, OPENAI_API_KEY
+```
+
 ## Quick Start
 
 ```bash

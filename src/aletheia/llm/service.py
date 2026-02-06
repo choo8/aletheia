@@ -38,10 +38,10 @@ class LLMService:
         """Initialize the LLM service.
 
         Args:
-            model: Model identifier (e.g., "claude-sonnet-4-20250514", "gpt-4").
-                   Defaults to ALETHEIA_LLM_MODEL env var or claude-sonnet-4-20250514.
+            model: Model identifier (e.g., "gemini/gemini-3-flash-preview", "gpt-4").
+                   Defaults to ALETHEIA_LLM_MODEL env var or gemini/gemini-3-flash-preview.
         """
-        self.model = model or os.environ.get("ALETHEIA_LLM_MODEL", "claude-sonnet-4-20250514")
+        self.model = model or os.environ.get("ALETHEIA_LLM_MODEL", "gemini/gemini-3-flash-preview")
 
     def _get_completion(self, system_prompt: str, user_message: str) -> str:
         """Get a completion from the LLM.

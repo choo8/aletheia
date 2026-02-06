@@ -46,10 +46,14 @@ class TestPrompts:
 class TestLLMService:
     """Tests for LLMService."""
 
+    @patch.dict("os.environ", {}, clear=False)
     def test_init_default_model(self):
         """Test default model initialization."""
+        import os
+
+        os.environ.pop("ALETHEIA_LLM_MODEL", None)
         service = LLMService()
-        assert "claude" in service.model.lower() or "gpt" in service.model.lower()
+        assert service.model == "gemini/gemini-3-flash-preview"
 
     def test_init_custom_model(self):
         """Test custom model initialization."""

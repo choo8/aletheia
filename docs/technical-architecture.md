@@ -238,6 +238,7 @@ Backend:  Python 3.11+
 ├── CLI:       typer (modern, type-hinted)
 ├── Web API:   FastAPI
 ├── LLM:       litellm (provider abstraction)
+├── Config:    python-dotenv (.env file support)
 └── Storage:   JSON files + SQLite (hybrid)
 
 Frontend:  HTMX + Jinja2 (server-rendered)
@@ -628,7 +629,7 @@ GET    /api/cards/{id}/history   # View edit history
 from litellm import completion
 
 class LLMService:
-    def __init__(self, model: str = "claude-sonnet-4-20250514"):
+    def __init__(self, model: str = "gemini/gemini-3-flash-preview"):
         self.model = model
 
     async def guided_extraction(
@@ -668,7 +669,7 @@ class LLMService:
 
 ```python
 # All use the same completion() interface:
-model="claude-sonnet-4-20250514"           # Anthropic Claude
+model="gemini/gemini-3-flash-preview" # Google Gemini
 model="gpt-4"                     # OpenAI
 model="ollama/llama2"             # Local Ollama
 model="together_ai/mistral-7b"    # Together.ai
@@ -682,7 +683,7 @@ model="groq/mixtral-8x7b"         # Groq
 {
   "llm": {
     "provider": "anthropic",
-    "model": "claude-sonnet-4-20250514",
+    "model": "gemini/gemini-3-flash-preview",
     "api_key_env": "ANTHROPIC_API_KEY",  // reads from env var
     "fallback_model": "ollama/llama2"    // if API unavailable
   }
