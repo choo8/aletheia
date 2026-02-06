@@ -33,7 +33,7 @@
     <!-- Additional context -->
     {% if card.intuition is defined and card.intuition %}
     <div class="mb-6 text-gray-600 italic">
-        <span class="font-medium">Intuition:</span> {{ card.intuition }}
+        <span class="font-medium">Intuition:</span> {{ card.intuition | katex | safe }}
     </div>
     {% endif %}
 
