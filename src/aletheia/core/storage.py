@@ -1,6 +1,7 @@
 """Storage layer for cards (JSON files) and operational data (SQLite)."""
 
 import json
+import re
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -8,6 +9,24 @@ from datetime import datetime
 from pathlib import Path
 
 from aletheia.core.models import AnyCard, CardType, card_from_dict
+
+# FTS5 operators that indicate the user is writing an explicit FTS query
+_FTS5_OPERATORS = re.compile(r'\b(AND|OR|NOT|NEAR)\b|["*]')
+
+# Expected FTS5 columns (order matters for schema comparison)
+_FTS5_COLUMNS = [
+    "card_id",
+    "front",
+    "back",
+    "name",
+    "tags",
+    "taxonomy",
+    "intuition",
+    "patterns",
+    "data_structures",
+    "definition",
+    "extra",
+]
 
 
 class CardStorage:
@@ -188,24 +207,41 @@ class ReviewDatabase:
                     new_value TEXT
                 );
 
-                -- Full-text search index
-                CREATE VIRTUAL TABLE IF NOT EXISTS card_search USING fts5(
-                    card_id,
-                    front,
-                    back,
-                    name,
-                    tags,
-                    taxonomy,
-                    content='',
-                    contentless_delete=1
-                );
-
                 -- Create indexes
                 CREATE INDEX IF NOT EXISTS idx_review_logs_card_id ON review_logs(card_id);
                 CREATE INDEX IF NOT EXISTS idx_review_logs_reviewed_at ON review_logs(reviewed_at);
                 CREATE INDEX IF NOT EXISTS idx_card_states_due ON card_states(due);
             """
             )
+        self._migrate_search_index()
+
+    def _migrate_search_index(self) -> None:
+        """Ensure card_search FTS5 table has the expected columns.
+
+        FTS5 virtual tables can't be ALTERed, so we DROP + recreate when
+        the column set changes.  This is safe because the FTS5 table is
+        just an index — all data is rebuilt from the JSON source of truth
+        via ``reindex_all()``.
+        """
+        cols_sql = ", ".join(_FTS5_COLUMNS)
+        with self._connection() as conn:
+            # Check if the table exists at all
+            exists = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='card_search'"
+            ).fetchone()
+            if not exists:
+                conn.execute(f"CREATE VIRTUAL TABLE card_search USING fts5({cols_sql})")
+                return
+
+            # Compare existing columns against expected
+            rows = conn.execute("PRAGMA table_xinfo(card_search)").fetchall()
+            existing = [row["name"] for row in rows]
+            if existing == _FTS5_COLUMNS:
+                return  # Schema is up to date
+
+            # Mismatch — drop and recreate
+            conn.execute("DROP TABLE card_search")
+            conn.execute(f"CREATE VIRTUAL TABLE card_search USING fts5({cols_sql})")
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
@@ -334,15 +370,42 @@ class ReviewDatabase:
 
     def index_card(self, card: AnyCard) -> None:
         """Add or update card in search index."""
-        name = getattr(card, "name", "")
+        name = getattr(card, "name", "") or ""
+        intuition = getattr(card, "intuition", "") or ""
+        patterns = " ".join(getattr(card, "patterns", []) or [])
+        data_structures = " ".join(getattr(card, "data_structures", []) or [])
+        definition = getattr(card, "definition", "") or ""
+
+        # Build catch-all 'extra' from remaining searchable fields
+        extra_parts: list[str] = []
+        for field in (
+            "edge_cases",
+            "when_to_use",
+            "when_not_to_use",
+            "how_it_works",
+            "use_cases",
+            "anti_patterns",
+            "common_patterns",
+        ):
+            val = getattr(card, field, None)
+            if val is None:
+                continue
+            if isinstance(val, list):
+                extra_parts.extend(val)
+            elif isinstance(val, str):
+                extra_parts.append(val)
+        extra = " ".join(extra_parts)
+
         with self._connection() as conn:
             # Delete existing entry
             conn.execute("DELETE FROM card_search WHERE card_id = ?", (card.id,))
             # Insert new entry
             conn.execute(
                 """
-                INSERT INTO card_search (card_id, front, back, name, tags, taxonomy)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO card_search
+                    (card_id, front, back, name, tags, taxonomy,
+                     intuition, patterns, data_structures, definition, extra)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     card.id,
@@ -351,21 +414,46 @@ class ReviewDatabase:
                     name,
                     " ".join(card.tags),
                     " ".join(card.taxonomy),
+                    intuition,
+                    patterns,
+                    data_structures,
+                    definition,
+                    extra,
                 ),
             )
 
     def search_cards(self, query: str) -> list[str]:
-        """Full-text search for cards."""
-        with self._connection() as conn:
-            rows = conn.execute(
-                """
-                SELECT card_id FROM card_search
-                WHERE card_search MATCH ?
-                ORDER BY rank
-            """,
-                (query,),
-            ).fetchall()
-            return [row["card_id"] for row in rows]
+        """Full-text search for cards.
+
+        If the query contains no FTS5 operators, each word is treated as a
+        prefix match (e.g. ``binary search`` → ``binary* search*``) so that
+        ``mono`` matches ``monotonic``.
+
+        Malformed FTS5 queries are caught and return an empty list.
+        """
+        query = query.strip()
+        if not query:
+            return []
+
+        # If the user is not using explicit FTS5 syntax, add prefix wildcards
+        if not _FTS5_OPERATORS.search(query):
+            words = query.split()
+            query = " ".join(f"{w}*" for w in words if w)
+
+        try:
+            with self._connection() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT card_id FROM card_search
+                    WHERE card_search MATCH ?
+                    ORDER BY rank
+                """,
+                    (query,),
+                ).fetchall()
+                return [row["card_id"] for row in rows]
+        except sqlite3.OperationalError:
+            # Malformed FTS5 query — return empty rather than crash
+            return []
 
     def get_stats(self) -> dict:
         """Get review statistics."""
@@ -440,11 +528,29 @@ class AletheiaStorage:
         return self.cards.list_all(**filters)
 
     def search(self, query: str) -> list[AnyCard]:
-        """Search cards."""
+        """Search cards using FTS5 with fallback to simple text search."""
+        if not query.strip():
+            return []
+
         # Try FTS first
         card_ids = self.db.search_cards(query)
         if card_ids:
-            return [self.cards.load(cid) for cid in card_ids if self.cards.load(cid)]
+            cards: list[AnyCard] = []
+            for cid in card_ids:
+                card = self.cards.load(cid)
+                if card:
+                    cards.append(card)
+            return cards
 
         # Fall back to simple search
         return self.cards.search(query)
+
+    def reindex_all(self) -> int:
+        """Rebuild the search index from all cards on disk.
+
+        Returns the number of cards indexed.
+        """
+        all_cards = self.list_cards()
+        for card in all_cards:
+            self.db.index_card(card)
+        return len(all_cards)

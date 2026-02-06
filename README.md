@@ -22,8 +22,9 @@ Unlike traditional flashcard apps optimized for rote memorization, Aletheia is d
 - **FSRS algorithm** for optimized spaced repetition
 - **LLM-assisted card creation and refinement** (guided extraction, guided editing, quality feedback)
 - **Card lifecycle management** - suspend, resume, exhaust, reformulate, split, and merge cards
+- **Full-text search** via SQLite FTS5 with prefix matching and 11 indexed fields
 - **CLI** for card management
-- **Mobile-friendly web interface** for review
+- **Mobile-friendly web interface** for review and search
 
 ## Installation
 
@@ -79,8 +80,13 @@ aletheia edit <card-id> --guided   # LLM-guided refinement
 # Get LLM quality feedback on a card
 aletheia check <card-id>
 
-# Search cards
+# Search cards (FTS5 with prefix matching)
 aletheia search "binary search"
+aletheia search "mono"                    # Prefix match: finds "monotonic"
+aletheia search --type dsa-problem "two"  # Filter by card type
+
+# Rebuild search index
+aletheia reindex
 
 # View statistics
 aletheia stats
@@ -150,7 +156,7 @@ uv run ruff check src/
 - [x] **Phase 3**: LLM integration (guided extraction, guided editing, quality feedback)
 - [ ] **Phase 4**: Polish (card lifecycle, stats, search)
   - [x] **Phase 4a**: Card lifecycle commands (suspend, resume, exhaust, reformulate, split, merge)
-  - [ ] **Phase 4b**: Search (SQLite FTS5 full-text search)
+  - [x] **Phase 4b**: Search (SQLite FTS5 full-text search, web search UI, reindex)
   - [ ] **Phase 4c**: Statistics dashboard (per-domain stats, streaks, review heatmap)
   - [ ] **Phase 4d**: Polish (mobile responsive refinement, git sync helpers)
 

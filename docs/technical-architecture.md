@@ -780,14 +780,21 @@ aletheia sync --pull               # Git pull
 - [x] Mode 4: Quality feedback prompts
 - [x] CLI integration (`--guided` flag on `add` and `edit`, `check` command)
 
-### Phase 4a: Card Lifecycle
-- [ ] Simple state transitions: `suspend`, `resume`, `exhaust` CLI commands
-- [ ] Add `suspended` maturity state to card model
-- [ ] Structural operations: `reformulate`, `split`, `merge` CLI commands
-- [ ] Lifecycle metadata (`suspended_at`, `exhausted_at`, `exhausted_reason`, links between cards)
+### Phase 4a: Card Lifecycle ✓
+- [x] Simple state transitions: `suspend`, `resume`, `exhaust` CLI commands
+- [x] Add `suspended` maturity state to card model
+- [x] Structural operations: `reformulate`, `split`, `merge` CLI commands
+- [x] Lifecycle metadata (`suspended_at`, `exhausted_at`, `exhausted_reason`, links between cards)
 
-### Phase 4b: Search
-- [ ] SQLite FTS5 full-text search (replace naive search)
+### Phase 4b: Search ✓
+- [x] SQLite FTS5 full-text search (expanded schema with 11 indexed fields)
+- [x] User-friendly query handling (automatic prefix matching, malformed query safety)
+- [x] Fixed double-load bug in `AletheiaStorage.search()`
+- [x] `reindex` CLI command to rebuild search index from disk
+- [x] `--type` filter on `search` CLI command
+- [x] Web search UI with HTMX live search (`/search`)
+- [x] FTS5 schema migration (auto-detect and rebuild on column changes)
+- [x] Comprehensive test coverage (35 tests)
 
 ### Phase 4c: Statistics Dashboard
 - [ ] Richer CLI stats (per-domain, streaks)
