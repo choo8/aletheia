@@ -703,6 +703,7 @@ aletheia add --quick               # Quick add (skip guided extraction)
 
 # Card Management
 aletheia edit <card-id>            # Edit card in $EDITOR
+aletheia edit <card-id> --guided   # LLM-guided edit (Socratic questions about the delta)
 aletheia edit --search "query"     # Search and edit
 aletheia list                      # List all cards
 aletheia list --domain dsa         # Filter by domain
@@ -771,11 +772,12 @@ aletheia sync --pull               # Git pull
 - [x] HTMX templates for review UI
 - [x] KaTeX integration
 
-### Phase 3: LLM Integration
-- [ ] litellm setup
-- [ ] Mode 1: Guided extraction prompts
-- [ ] Mode 4: Quality feedback prompts
-- [ ] CLI integration
+### Phase 3: LLM Integration ✓
+- [x] litellm setup
+- [x] Mode 1: Guided extraction prompts (new card creation)
+- [x] Mode 1b: Guided edit extraction prompts (refine existing cards)
+- [x] Mode 4: Quality feedback prompts
+- [x] CLI integration (`--guided` flag on `add` and `edit`, `check` command)
 
 ### Phase 4: Polish
 - [ ] Card lifecycle (reformulate, split, merge)

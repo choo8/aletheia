@@ -487,8 +487,9 @@ A working end-to-end flow for DSA and System Design knowledge capture and review
 - [ ] System Design Concept Cards
 - [ ] Manual linking between cards (similar_to, prerequisite, etc.)
 - [ ] Taxonomy + tag assignment
-- [ ] LLM-assisted card creation:
+- [ ] LLM-assisted card creation and refinement:
   - [ ] Mode 1: Guided Extraction (Socratic questions → user articulates → cards generated)
+  - [ ] Mode 1b: Guided Edit (Socratic questions about the *delta* → refine existing cards)
   - [ ] Mode 4: Quality Feedback (review user-written cards, suggest improvements)
 
 **Review System**
@@ -506,6 +507,7 @@ A working end-to-end flow for DSA and System Design knowledge capture and review
 
 **Card Lifecycle**
 - [ ] Edit cards via CLI (`$EDITOR` integration)
+- [ ] LLM-guided card editing via CLI (`aletheia edit <id> --guided`)
 - [ ] Edit cards during review (inline web form)
 - [ ] Mark cards as exhausted (understanding deepened)
 - [ ] Suspend/resume cards

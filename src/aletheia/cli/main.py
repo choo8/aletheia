@@ -24,6 +24,7 @@ from aletheia.core.models import (
 )
 from aletheia.core.scheduler import AletheiaScheduler, ReviewRating
 from aletheia.core.storage import AletheiaStorage
+from aletheia.llm import LLMError, LLMService
 
 app = typer.Typer(
     name="aletheia",
@@ -78,13 +79,21 @@ def add(
         False,
         "--quick",
         "-q",
-        help="Quick add mode (skip guided extraction)",
+        help="Quick add mode (skip optional fields)",
+    ),
+    guided: bool = typer.Option(
+        False,
+        "--guided",
+        "-g",
+        help="Use LLM-guided extraction (Mode 1: Socratic questions)",
     ),
 ) -> None:
     """Add a new card interactively."""
     storage = get_storage()
 
-    if card_type == "dsa-problem":
+    if guided:
+        card = _add_guided(card_type)
+    elif card_type == "dsa-problem":
         card = _add_dsa_problem(quick)
     elif card_type == "dsa-concept":
         card = _add_dsa_concept(quick)
@@ -281,6 +290,141 @@ def _add_system_design(quick: bool) -> SystemDesignCard | None:
     return None
 
 
+def _add_guided(card_type: str) -> DSAProblemCard | DSAConceptCard | SystemDesignCard | None:
+    """LLM-guided card creation using Socratic questions."""
+    rprint(f"\n[bold]Guided Card Creation ({card_type})[/bold]")
+    rprint("[dim]The LLM will ask Socratic questions to help you articulate understanding.[/dim]\n")
+
+    # Get initial context from user
+    rprint("Describe what you learned (problem solved, concept understood, etc.):")
+    context = typer.prompt("Context")
+
+    if not context.strip():
+        rprint("[red]Context cannot be empty.[/red]")
+        return None
+
+    # Initialize LLM service
+    try:
+        llm = LLMService()
+    except Exception as e:
+        rprint(f"[red]Failed to initialize LLM: {e}[/red]")
+        rprint("[dim]Make sure ANTHROPIC_API_KEY or OPENAI_API_KEY is set.[/dim]")
+        return None
+
+    # Get Socratic questions from LLM
+    rprint("\n[dim]Generating questions...[/dim]")
+    try:
+        questions = llm.guided_extraction(context, card_type)
+    except LLMError as e:
+        rprint(f"[red]LLM error: {e}[/red]")
+        return None
+
+    if not questions:
+        rprint("[red]No questions generated. Please try again.[/red]")
+        return None
+
+    # Ask each question and collect answers
+    rprint("\n[bold]Answer these questions to create your card:[/bold]")
+    rprint("[dim]Press Enter to skip a question.[/dim]\n")
+    answers = []
+    for i, question in enumerate(questions, 1):
+        rprint(f"[cyan]Q{i}:[/cyan] {question}")
+        answer = typer.prompt("Your answer", default="")
+        if answer.strip():
+            answers.append((question, answer))
+        rprint("")
+
+    # Structure answers into card content
+    # Use first Q&A as front/back, rest as supporting content
+    front = answers[0][0] if answers else "What did you learn?"
+    back = answers[0][1] if answers else context
+
+    # Combine other answers into intuition/notes
+    intuition_parts = []
+    for q, a in answers[1:]:
+        if a.strip():
+            intuition_parts.append(f"{a}")
+    intuition = " ".join(intuition_parts) if intuition_parts else None
+
+    # Create card based on type
+    if card_type == "dsa-problem":
+        # Prompt for minimal required fields
+        rprint("\n[bold]Additional details:[/bold]")
+        platform = typer.prompt("Platform", default="leetcode")
+        problem_id = typer.prompt("Problem ID", default="")
+        title = typer.prompt("Problem title", default="")
+
+        source = LeetcodeSource(
+            platform=platform,
+            platform_id=problem_id,
+            title=title,
+            url=None,
+            difficulty="medium",
+        )
+
+        patterns_str = typer.prompt("Patterns (comma-separated)", default="")
+        patterns = [p.strip() for p in patterns_str.split(",") if p.strip()]
+
+        card = DSAProblemCard(
+            front=front,
+            back=back,
+            problem_source=source,
+            patterns=patterns,
+            intuition=intuition,
+            creation_mode=CreationMode.GUIDED_EXTRACTION,
+        )
+    elif card_type == "dsa-concept":
+        name = typer.prompt("Concept name", default="")
+        card = DSAConceptCard(
+            name=name,
+            front=front,
+            back=back,
+            intuition=intuition,
+            creation_mode=CreationMode.GUIDED_EXTRACTION,
+        )
+    elif card_type == "system-design":
+        name = typer.prompt("Concept name", default="")
+        card = SystemDesignCard(
+            name=name,
+            front=front,
+            back=back,
+            creation_mode=CreationMode.GUIDED_EXTRACTION,
+        )
+    else:
+        rprint(f"[red]Guided mode not supported for: {card_type}[/red]")
+        return None
+
+    # Preview and confirm
+    rprint("\n[bold]Preview:[/bold]")
+    _display_card(card, full=True)
+
+    # Offer to edit in $EDITOR
+    if typer.confirm("\nEdit in editor before saving?", default=False):
+        editable = {
+            "front": card.front,
+            "back": card.back,
+        }
+        if hasattr(card, "intuition") and card.intuition:
+            editable["intuition"] = card.intuition
+
+        content = json.dumps(editable, indent=2)
+        edited = open_in_editor(content, suffix=".json")
+
+        if edited.strip():
+            try:
+                data = json.loads(edited)
+                card.front = data.get("front", card.front)
+                card.back = data.get("back", card.back)
+                if "intuition" in data and hasattr(card, "intuition"):
+                    card.intuition = data.get("intuition")
+            except json.JSONDecodeError:
+                rprint("[yellow]Invalid JSON, keeping original content.[/yellow]")
+
+    if typer.confirm("\nSave this card?", default=True):
+        return card
+    return None
+
+
 # ============================================================================
 # LIST command
 # ============================================================================
@@ -429,6 +573,12 @@ def _display_card(card, full: bool = False) -> None:
 @app.command()
 def edit(
     card_id: str = typer.Argument(..., help="Card ID to edit"),
+    guided: bool = typer.Option(
+        False,
+        "--guided",
+        "-g",
+        help="Use LLM-guided Socratic questions to refine the card",
+    ),
 ) -> None:
     """Edit a card in your editor."""
     storage = get_storage()
@@ -437,6 +587,10 @@ def edit(
     if card is None:
         rprint(f"[red]Card not found: {card_id}[/red]")
         raise typer.Exit(1)
+
+    if guided:
+        _edit_guided(card, storage)
+        return
 
     # Create a simplified editable version
     editable = {
@@ -486,6 +640,187 @@ def edit(
 
     path = storage.save_card(card)
     rprint(f"[green]Card updated![/green] {path}")
+
+
+def _format_card_for_llm(card) -> str:
+    """Convert a card to a readable string for LLM context."""
+    lines = [
+        f"Type: {card.type.value}",
+        f"Front: {card.front}",
+        f"Back: {card.back}",
+    ]
+
+    if hasattr(card, "name") and card.name:
+        lines.append(f"Name: {card.name}")
+    if hasattr(card, "intuition") and card.intuition:
+        lines.append(f"Intuition: {card.intuition}")
+    if hasattr(card, "patterns") and card.patterns:
+        lines.append(f"Patterns: {', '.join(card.patterns)}")
+    if hasattr(card, "edge_cases") and card.edge_cases:
+        lines.append(f"Edge cases: {', '.join(card.edge_cases)}")
+    if hasattr(card, "definition") and card.definition:
+        lines.append(f"Definition: {card.definition}")
+    if hasattr(card, "when_to_use") and card.when_to_use:
+        lines.append(f"When to use: {card.when_to_use}")
+    if hasattr(card, "when_not_to_use") and card.when_not_to_use:
+        lines.append(f"When not to use: {card.when_not_to_use}")
+    if hasattr(card, "how_it_works") and card.how_it_works:
+        lines.append(f"How it works: {card.how_it_works}")
+    if hasattr(card, "use_cases") and card.use_cases:
+        lines.append(f"Use cases: {', '.join(card.use_cases)}")
+    if hasattr(card, "anti_patterns") and card.anti_patterns:
+        lines.append(f"Anti-patterns: {', '.join(card.anti_patterns)}")
+    if hasattr(card, "common_patterns") and card.common_patterns:
+        lines.append(f"Common patterns: {', '.join(card.common_patterns)}")
+    if hasattr(card, "data_structures") and card.data_structures:
+        lines.append(f"Data structures: {', '.join(card.data_structures)}")
+    if hasattr(card, "complexity") and card.complexity:
+        lines.append(f"Complexity: Time {card.complexity.time}, Space {card.complexity.space}")
+    if card.tags:
+        lines.append(f"Tags: {', '.join(card.tags)}")
+
+    return "\n".join(lines)
+
+
+def _build_edit_from_answers(card, answers: list[tuple[str, str]], new_context: str) -> dict:
+    """Build an editable dict from guided Q&A answers and existing card.
+
+    Includes transient _guided_qa_reference and _new_context keys as editor
+    reference material. These underscore-prefixed keys are silently skipped
+    when applying updates (no matching attribute on card).
+    """
+    # Build Q&A reference string
+    qa_lines = []
+    for q, a in answers:
+        qa_lines.append(f"Q: {q}")
+        qa_lines.append(f"A: {a}")
+        qa_lines.append("")
+    qa_reference = "\n".join(qa_lines).strip()
+
+    editable = {
+        "_guided_qa_reference": qa_reference,
+        "_new_context": new_context,
+        "id": card.id,
+        "type": card.type.value,
+        "front": card.front,
+        "back": card.back,
+        "tags": card.tags,
+        "taxonomy": card.taxonomy,
+        "maturity": card.maturity.value,
+    }
+
+    # Add type-specific fields
+    if hasattr(card, "name"):
+        editable["name"] = card.name
+    if hasattr(card, "patterns"):
+        editable["patterns"] = card.patterns
+    if hasattr(card, "intuition"):
+        editable["intuition"] = card.intuition or ""
+    if hasattr(card, "edge_cases"):
+        editable["edge_cases"] = card.edge_cases
+    if hasattr(card, "definition"):
+        editable["definition"] = card.definition or ""
+    if hasattr(card, "when_to_use"):
+        editable["when_to_use"] = card.when_to_use or ""
+    if hasattr(card, "when_not_to_use"):
+        editable["when_not_to_use"] = card.when_not_to_use or ""
+    if hasattr(card, "how_it_works"):
+        editable["how_it_works"] = card.how_it_works or ""
+    if hasattr(card, "use_cases"):
+        editable["use_cases"] = card.use_cases
+    if hasattr(card, "anti_patterns"):
+        editable["anti_patterns"] = card.anti_patterns
+
+    return editable
+
+
+def _edit_guided(card, storage: AletheiaStorage) -> None:
+    """LLM-guided card editing using Socratic questions about the delta."""
+    rprint(f"\n[bold]Guided Edit ({card.type.value})[/bold]")
+    rprint("[dim]The LLM will ask questions about what changed in your understanding.[/dim]\n")
+
+    # Display existing card
+    _display_card(card, full=True)
+
+    # Get new context from user
+    rprint("\nDescribe what changed in your understanding:")
+    new_context = typer.prompt("New context")
+
+    if not new_context.strip():
+        rprint("[red]Context cannot be empty.[/red]")
+        return
+
+    # Initialize LLM service
+    try:
+        llm = LLMService()
+    except Exception as e:
+        rprint(f"[red]Failed to initialize LLM: {e}[/red]")
+        rprint("[dim]Make sure ANTHROPIC_API_KEY or OPENAI_API_KEY is set.[/dim]")
+        return
+
+    # Format existing card for LLM
+    existing_content = _format_card_for_llm(card)
+
+    # Get Socratic questions from LLM
+    rprint("\n[dim]Generating questions...[/dim]")
+    try:
+        questions = llm.guided_edit_extraction(existing_content, new_context, card.type.value)
+    except LLMError as e:
+        rprint(f"[red]LLM error: {e}[/red]")
+        return
+
+    if not questions:
+        rprint("[red]No questions generated. Please try again.[/red]")
+        return
+
+    # Ask each question and collect answers
+    rprint("\n[bold]Answer these questions to refine your card:[/bold]")
+    rprint("[dim]Press Enter to skip a question.[/dim]\n")
+    answers = []
+    for i, question in enumerate(questions, 1):
+        rprint(f"[cyan]Q{i}:[/cyan] {question}")
+        answer = typer.prompt("Your answer", default="")
+        if answer.strip():
+            answers.append((question, answer))
+        rprint("")
+
+    # Build editable dict with Q&A reference
+    editable = _build_edit_from_answers(card, answers, new_context)
+
+    # Open in editor for fine-tuning
+    content = json.dumps(editable, indent=2)
+    edited_content = open_in_editor(content, suffix=".json")
+
+    if not edited_content.strip():
+        rprint("[yellow]Edit cancelled (empty content).[/yellow]")
+        return
+
+    try:
+        edited = json.loads(edited_content)
+    except json.JSONDecodeError as e:
+        rprint(f"[red]Invalid JSON: {e}[/red]")
+        return
+
+    # Apply updates (skip underscore-prefixed keys and immutable fields)
+    for key, value in edited.items():
+        if key.startswith("_") or key in ["id", "type"]:
+            continue
+        if hasattr(card, key):
+            setattr(card, key, value)
+
+    # Handle maturity separately (it's an enum)
+    if "maturity" in edited:
+        card.maturity = Maturity(edited["maturity"])
+
+    # Preview
+    rprint("\n[bold]Preview:[/bold]")
+    _display_card(card, full=True)
+
+    if typer.confirm("\nSave changes?", default=True):
+        path = storage.save_card(card)
+        rprint(f"[green]Card updated![/green] {path}")
+    else:
+        rprint("[yellow]Changes discarded.[/yellow]")
 
 
 # ============================================================================
@@ -545,6 +880,87 @@ def search(
     for card in results:
         _display_card(card)
         rprint("")
+
+
+# ============================================================================
+# CHECK command (Quality Feedback - Mode 4)
+# ============================================================================
+
+
+@app.command()
+def check(
+    card_id: str = typer.Argument(..., help="Card ID to check (or 'all')"),
+) -> None:
+    """Get LLM quality feedback on a card (Mode 4)."""
+    storage = get_storage()
+
+    # Handle --all case
+    if card_id.lower() == "all":
+        cards = storage.list_cards()
+        if not cards:
+            rprint("[dim]No cards found.[/dim]")
+            return
+
+        rprint(f"\n[bold]Checking {len(cards)} card(s)...[/bold]\n")
+        for card in cards:
+            _check_card(card)
+            rprint("")
+        return
+
+    # Find the card
+    card = _find_card(storage, card_id)
+    if card is None:
+        rprint(f"[red]Card not found: {card_id}[/red]")
+        raise typer.Exit(1)
+
+    _check_card(card)
+
+
+def _check_card(card) -> None:
+    """Check a single card and display feedback."""
+    rprint(f"[bold]Checking card:[/bold] {card.id[:8]}...")
+    rprint(f"[dim]Front: {card.front[:50]}{'...' if len(card.front) > 50 else ''}[/dim]\n")
+
+    try:
+        llm = LLMService()
+    except Exception as e:
+        rprint(f"[red]Failed to initialize LLM: {e}[/red]")
+        rprint("[dim]Make sure ANTHROPIC_API_KEY or OPENAI_API_KEY is set.[/dim]")
+        return
+
+    try:
+        feedback = llm.quality_feedback(card.front, card.back, card.type.value)
+    except LLMError as e:
+        rprint(f"[red]LLM error: {e}[/red]")
+        return
+
+    # Display overall quality
+    quality_color = {
+        "good": "green",
+        "needs_work": "yellow",
+        "poor": "red",
+    }.get(feedback.overall_quality, "white")
+    rprint(f"[{quality_color}]Overall: {feedback.overall_quality.upper()}[/{quality_color}]")
+
+    # Display strengths
+    if feedback.strengths:
+        rprint("\n[green]Strengths:[/green]")
+        for strength in feedback.strengths:
+            rprint(f"  [green]✓[/green] {strength}")
+
+    # Display issues
+    if feedback.issues:
+        rprint("\n[yellow]Issues:[/yellow]")
+        for issue in feedback.issues:
+            rprint(f"  [yellow]⚠[/yellow] {issue.type}: {issue.description}")
+            if issue.suggestion:
+                rprint(f"    [dim]→ {issue.suggestion}[/dim]")
+
+    # Display suggestions
+    if feedback.suggested_front:
+        rprint(f"\n[cyan]Suggested front:[/cyan] {feedback.suggested_front}")
+    if feedback.suggested_back:
+        rprint(f"[cyan]Suggested back:[/cyan] {feedback.suggested_back}")
 
 
 # ============================================================================
