@@ -181,6 +181,48 @@ class TestExhaust:
         assert loaded.maturity == Maturity.EXHAUSTED
 
 
+class TestRevive:
+    """Tests for revive lifecycle transition."""
+
+    def test_exhausted_to_active(self, storage):
+        card = _make_problem_card()
+        card.maturity = Maturity.EXHAUSTED
+        card.lifecycle.exhausted_at = utcnow()
+        card.lifecycle.exhausted_reason = "duplicate"
+        storage.save_card(card)
+
+        card.maturity = Maturity.ACTIVE
+        card.lifecycle.exhausted_at = None
+        card.lifecycle.exhausted_reason = None
+        storage.save_card(card)
+
+        loaded = storage.load_card(card.id)
+        assert loaded.maturity == Maturity.ACTIVE
+        assert loaded.lifecycle.exhausted_at is None
+        assert loaded.lifecycle.exhausted_reason is None
+
+    def test_not_exhausted_noop(self):
+        """Reviving an active card should be a no-op (guard in CLI)."""
+        card = _make_problem_card()
+        assert card.maturity == Maturity.ACTIVE
+
+    def test_clears_exhausted_metadata(self, storage):
+        card = _make_problem_card()
+        card.maturity = Maturity.EXHAUSTED
+        card.lifecycle.exhausted_at = utcnow()
+        card.lifecycle.exhausted_reason = "split"
+        storage.save_card(card)
+
+        card.maturity = Maturity.ACTIVE
+        card.lifecycle.exhausted_at = None
+        card.lifecycle.exhausted_reason = None
+        storage.save_card(card)
+
+        loaded = storage.load_card(card.id)
+        assert loaded.lifecycle.exhausted_at is None
+        assert loaded.lifecycle.exhausted_reason is None
+
+
 class TestReviewFiltering:
     """Tests for filtering non-active cards from review lists."""
 

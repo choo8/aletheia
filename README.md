@@ -82,6 +82,7 @@ aletheia review --new 3      # Limit new cards
 aletheia suspend <card-id>              # Pause reviews for a card
 aletheia resume <card-id>               # Re-enable reviews
 aletheia exhaust <card-id> -r duplicate # Permanently retire a card
+aletheia revive <card-id>               # Un-exhaust a retired card
 aletheia reformulate <card-id>          # Create improved card, retire original
 aletheia reformulate <card-id> -g       # LLM-guided reformulation
 aletheia split <card-id>                # Split into multiple cards

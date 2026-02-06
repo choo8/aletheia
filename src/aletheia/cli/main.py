@@ -1219,6 +1219,30 @@ def exhaust(
     rprint(f"[green]Card exhausted:[/green] {card.id[:8]} (reason: {reason})")
 
 
+@app.command()
+def revive(
+    card_id: str = typer.Argument(..., help="Card ID to revive"),
+) -> None:
+    """Revive an exhausted card (return to active reviews)."""
+    storage = get_storage()
+    card = _find_card(storage, card_id)
+
+    if card is None:
+        rprint(f"[red]Card not found: {card_id}[/red]")
+        raise typer.Exit(1)
+
+    if card.maturity != Maturity.EXHAUSTED:
+        mat = card.maturity.value
+        rprint(f"[yellow]Card is not exhausted: {card.id[:8]} (maturity: {mat})[/yellow]")
+        return
+
+    card.maturity = Maturity.ACTIVE
+    card.lifecycle.exhausted_at = None
+    card.lifecycle.exhausted_reason = None
+    storage.save_card(card)
+    rprint(f"[green]Card revived:[/green] {card.id[:8]}")
+
+
 # ============================================================================
 # REFORMULATE command
 # ============================================================================
