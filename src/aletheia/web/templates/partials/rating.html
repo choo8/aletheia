@@ -1,0 +1,47 @@
+<!-- Rating buttons -->
+<div class="mt-6">
+    <p class="text-sm text-gray-500 mb-3 text-center">How well did you remember?</p>
+    <form
+        hx-post="/review/rate/{{ card.id }}"
+        hx-target="#review-container"
+        hx-swap="innerHTML"
+        class="grid grid-cols-4 gap-2"
+    >
+        <button
+            type="submit"
+            name="rating"
+            value="1"
+            class="rating-btn bg-red-500 hover:bg-red-600 text-white py-4 rounded-lg font-medium transition-colors"
+        >
+            <span class="block text-lg">Again</span>
+            <span class="block text-xs opacity-75">Forgot</span>
+        </button>
+        <button
+            type="submit"
+            name="rating"
+            value="2"
+            class="rating-btn bg-orange-500 hover:bg-orange-600 text-white py-4 rounded-lg font-medium transition-colors"
+        >
+            <span class="block text-lg">Hard</span>
+            <span class="block text-xs opacity-75">Difficult</span>
+        </button>
+        <button
+            type="submit"
+            name="rating"
+            value="3"
+            class="rating-btn bg-green-500 hover:bg-green-600 text-white py-4 rounded-lg font-medium transition-colors"
+        >
+            <span class="block text-lg">Good</span>
+            <span class="block text-xs opacity-75">Correct</span>
+        </button>
+        <button
+            type="submit"
+            name="rating"
+            value="4"
+            class="rating-btn bg-blue-500 hover:bg-blue-600 text-white py-4 rounded-lg font-medium transition-colors"
+        >
+            <span class="block text-lg">Easy</span>
+            <span class="block text-xs opacity-75">Trivial</span>
+        </button>
+    </form>
+</div>

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Aletheia{% endblock %}</title>
+
+    <!-- Tailwind CSS via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- KaTeX CSS and auto-render for client-side fallback -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+        onload="renderMathInElement(document.body, {
+            delimiters: [
+                {left: '$$', right: '$$', display: true},
+                {left: '$', right: '$', display: false}
+            ]
+        });"></script>
+
+    <!-- HTMX -->
+    <script src="/static/js/htmx.min.js"></script>
+
+    <style>
+        /* Custom styles */
+        .card-content {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        /* Rating button animations */
+        .rating-btn {
+            transition: transform 0.1s ease-in-out;
+        }
+        .rating-btn:active {
+            transform: scale(0.95);
+        }
+
+        /* Loading indicator */
+        .htmx-request .htmx-indicator {
+            display: inline-block;
+        }
+        .htmx-indicator {
+            display: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <nav class="bg-white shadow-sm">
+        <div class="max-w-2xl mx-auto px-4 py-3">
+            <a href="/" class="text-xl font-bold text-gray-800">Aletheia</a>
+            <span class="text-gray-500 ml-2">Spaced Repetition</span>
+        </div>
+    </nav>
+
+    <main class="max-w-2xl mx-auto px-4 py-8">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="max-w-2xl mx-auto px-4 py-4 text-center text-gray-500 text-sm">
+        <p>Knowledge is power. Review daily.</p>
+    </footer>
+</body>
+</html>
