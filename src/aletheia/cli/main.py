@@ -506,12 +506,7 @@ def show(
 ) -> None:
     """Show details of a specific card."""
     storage = get_storage()
-    card = _find_card(storage, card_id)
-
-    if card is None:
-        rprint(f"[red]Card not found: {card_id}[/red]")
-        raise typer.Exit(1)
-
+    card = _require_card(storage, card_id)
     _display_card(card, full=True)
 
 
@@ -535,6 +530,23 @@ def _find_card(storage: AletheiaStorage, card_id: str):
         return None
 
     return None
+
+
+def _require_card(storage: AletheiaStorage, card_id: str) -> AnyCard:
+    """Find a card by ID or exit with an error."""
+    card = _find_card(storage, card_id)
+    if card is None:
+        rprint(f"[red]Card not found: {card_id}[/red]")
+        raise typer.Exit(1)
+    return card
+
+
+def _exhaust_card(storage: AletheiaStorage, card, reason: str) -> None:
+    """Mark a card as exhausted and save it."""
+    card.maturity = Maturity.EXHAUSTED
+    card.lifecycle.exhausted_at = utcnow()
+    card.lifecycle.exhausted_reason = reason
+    storage.save_card(card)
 
 
 def _display_card(card, full: bool = False) -> None:
@@ -585,11 +597,7 @@ def edit(
 ) -> None:
     """Edit a card in your editor."""
     storage = get_storage()
-    card = _find_card(storage, card_id)
-
-    if card is None:
-        rprint(f"[red]Card not found: {card_id}[/red]")
-        raise typer.Exit(1)
+    card = _require_card(storage, card_id)
 
     if guided:
         _edit_guided(card, storage)
@@ -958,12 +966,7 @@ def check(
             rprint("")
         return
 
-    # Find the card
-    card = _find_card(storage, card_id)
-    if card is None:
-        rprint(f"[red]Card not found: {card_id}[/red]")
-        raise typer.Exit(1)
-
+    card = _require_card(storage, card_id)
     _check_card(card)
 
 
@@ -1135,11 +1138,7 @@ def suspend(
 ) -> None:
     """Suspend a card (pause reviews without losing progress)."""
     storage = get_storage()
-    card = _find_card(storage, card_id)
-
-    if card is None:
-        rprint(f"[red]Card not found: {card_id}[/red]")
-        raise typer.Exit(1)
+    card = _require_card(storage, card_id)
 
     if card.maturity == Maturity.EXHAUSTED:
         rprint(f"[red]Cannot suspend an exhausted card: {card.id[:8]}[/red]")
@@ -1161,11 +1160,7 @@ def resume(
 ) -> None:
     """Resume a suspended card (re-enable reviews)."""
     storage = get_storage()
-    card = _find_card(storage, card_id)
-
-    if card is None:
-        rprint(f"[red]Card not found: {card_id}[/red]")
-        raise typer.Exit(1)
+    card = _require_card(storage, card_id)
 
     if card.maturity != Maturity.SUSPENDED:
         mat = card.maturity.value
@@ -1190,11 +1185,7 @@ def exhaust(
 ) -> None:
     """Mark a card as exhausted (permanently retire from reviews)."""
     storage = get_storage()
-    card = _find_card(storage, card_id)
-
-    if card is None:
-        rprint(f"[red]Card not found: {card_id}[/red]")
-        raise typer.Exit(1)
+    card = _require_card(storage, card_id)
 
     if card.maturity == Maturity.EXHAUSTED:
         rprint(f"[yellow]Card is already exhausted: {card.id[:8]}[/yellow]")
@@ -1212,10 +1203,7 @@ def exhaust(
         rprint("[yellow]Cancelled.[/yellow]")
         return
 
-    card.maturity = Maturity.EXHAUSTED
-    card.lifecycle.exhausted_at = utcnow()
-    card.lifecycle.exhausted_reason = reason
-    storage.save_card(card)
+    _exhaust_card(storage, card, reason)
     rprint(f"[green]Card exhausted:[/green] {card.id[:8]} (reason: {reason})")
 
 
@@ -1225,11 +1213,7 @@ def revive(
 ) -> None:
     """Revive an exhausted card (return to active reviews)."""
     storage = get_storage()
-    card = _find_card(storage, card_id)
-
-    if card is None:
-        rprint(f"[red]Card not found: {card_id}[/red]")
-        raise typer.Exit(1)
+    card = _require_card(storage, card_id)
 
     if card.maturity != Maturity.EXHAUSTED:
         mat = card.maturity.value
@@ -1260,11 +1244,7 @@ def reformulate(
 ) -> None:
     """Create a new card from an existing one, exhausting the original."""
     storage = get_storage()
-    card = _find_card(storage, card_id)
-
-    if card is None:
-        rprint(f"[red]Card not found: {card_id}[/red]")
-        raise typer.Exit(1)
+    card = _require_card(storage, card_id)
 
     if card.maturity == Maturity.EXHAUSTED:
         rprint(f"[red]Cannot reformulate an exhausted card: {card.id[:8]}[/red]")
@@ -1308,10 +1288,7 @@ def reformulate(
     rprint(f"\n[green]New card created:[/green] {new_card.id[:8]} ({new_path})")
 
     # Exhaust original
-    card.maturity = Maturity.EXHAUSTED
-    card.lifecycle.exhausted_at = utcnow()
-    card.lifecycle.exhausted_reason = "understanding_deepened"
-    storage.save_card(card)
+    _exhaust_card(storage, card, "understanding_deepened")
     rprint(f"[dim]Original card exhausted:[/dim] {card.id[:8]}")
 
 
@@ -1326,11 +1303,7 @@ def split(
 ) -> None:
     """Split a card into multiple new cards, exhausting the original."""
     storage = get_storage()
-    card = _find_card(storage, card_id)
-
-    if card is None:
-        rprint(f"[red]Card not found: {card_id}[/red]")
-        raise typer.Exit(1)
+    card = _require_card(storage, card_id)
 
     if card.maturity == Maturity.EXHAUSTED:
         rprint(f"[red]Cannot split an exhausted card: {card.id[:8]}[/red]")
@@ -1375,10 +1348,7 @@ def split(
         rprint(f"[green]New card created:[/green] {nc.id[:8]} ({path})")
 
     # Exhaust original
-    card.maturity = Maturity.EXHAUSTED
-    card.lifecycle.exhausted_at = utcnow()
-    card.lifecycle.exhausted_reason = "split"
-    storage.save_card(card)
+    _exhaust_card(storage, card, "split")
     rprint(f"\n[dim]Original card exhausted:[/dim] {card.id[:8]}")
     rprint(f"[bold]Split into {len(new_cards)} card(s).[/bold]")
 
@@ -1402,10 +1372,7 @@ def merge(
     # Resolve all cards
     cards = []
     for cid in card_ids:
-        card = _find_card(storage, cid)
-        if card is None:
-            rprint(f"[red]Card not found: {cid}[/red]")
-            raise typer.Exit(1)
+        card = _require_card(storage, cid)
         if card.maturity == Maturity.EXHAUSTED:
             rprint(f"[red]Cannot merge an exhausted card: {card.id[:8]}[/red]")
             raise typer.Exit(1)
@@ -1484,10 +1451,7 @@ def merge(
 
     # Exhaust all originals
     for card in cards:
-        card.maturity = Maturity.EXHAUSTED
-        card.lifecycle.exhausted_at = utcnow()
-        card.lifecycle.exhausted_reason = "merged"
-        storage.save_card(card)
+        _exhaust_card(storage, card, "merged")
         rprint(f"[dim]Original card exhausted:[/dim] {card.id[:8]}")
 
     rprint(f"\n[bold]Merged {len(cards)} cards into 1.[/bold]")
