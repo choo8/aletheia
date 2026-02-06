@@ -324,18 +324,20 @@ def _add_guided(card_type: str) -> DSAProblemCard | DSAConceptCard | SystemDesig
         return None
 
     # Ask each question and collect answers
-    rprint("\n[bold]Answer these questions to create your card:[/bold]\n")
+    rprint("\n[bold]Answer these questions to create your card:[/bold]")
+    rprint("[dim]Press Enter to skip a question.[/dim]\n")
     answers = []
     for i, question in enumerate(questions, 1):
         rprint(f"[cyan]Q{i}:[/cyan] {question}")
-        answer = typer.prompt("Your answer")
-        answers.append((question, answer))
+        answer = typer.prompt("Your answer", default="")
+        if answer.strip():
+            answers.append((question, answer))
         rprint("")
 
     # Structure answers into card content
     # Use first Q&A as front/back, rest as supporting content
     front = answers[0][0] if answers else "What did you learn?"
-    back = answers[0][1] if answers else ""
+    back = answers[0][1] if answers else context
 
     # Combine other answers into intuition/notes
     intuition_parts = []
@@ -772,12 +774,14 @@ def _edit_guided(card, storage: AletheiaStorage) -> None:
         return
 
     # Ask each question and collect answers
-    rprint("\n[bold]Answer these questions to refine your card:[/bold]\n")
+    rprint("\n[bold]Answer these questions to refine your card:[/bold]")
+    rprint("[dim]Press Enter to skip a question.[/dim]\n")
     answers = []
     for i, question in enumerate(questions, 1):
         rprint(f"[cyan]Q{i}:[/cyan] {question}")
-        answer = typer.prompt("Your answer")
-        answers.append((question, answer))
+        answer = typer.prompt("Your answer", default="")
+        if answer.strip():
+            answers.append((question, answer))
         rprint("")
 
     # Build editable dict with Q&A reference

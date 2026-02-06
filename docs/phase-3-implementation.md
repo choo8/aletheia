@@ -282,3 +282,30 @@ pytest tests/test_llm.py -v
 - Web UI for LLM features deferred to Phase 4 (CLI-first for MVP)
 - Math and Research card templates can be added later
 - FSRS optimizer integration (using review logs) deferred to future phase
+
+---
+
+## Future Enhancements
+
+### Conversational Follow-up (Multi-turn)
+
+Currently each Socratic question is a single prompt-response. A richer flow would
+let the user converse with the LLM per question — asking for clarification,
+refining their answer, or exploring a tangent — before moving on.
+
+Design sketch:
+- After each answer the LLM can reply with a follow-up or accept the answer.
+- A `/next` or empty Enter advances to the next question.
+- Conversation history for that question is included when structuring the card.
+
+### Atomic Card Generation
+
+Today, guided extraction stuffs all follow-up Q&A answers into a single card's
+`intuition` field. A better approach would produce multiple linked cards — one
+per distinct insight — rather than a single overloaded card.
+
+Design sketch:
+- After the Q&A loop, the LLM proposes N atomic card drafts (each with its own
+  front/back).
+- Cards are linked via `links.similar_to` or a new `cluster` field.
+- The user reviews and edits each draft before saving.

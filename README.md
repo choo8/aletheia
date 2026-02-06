@@ -45,6 +45,7 @@ pip install -e .
 ```bash
 # Add a new DSA problem card
 aletheia add dsa-problem
+aletheia add dsa-problem --guided   # LLM-guided Socratic extraction
 
 # Add a DSA concept card
 aletheia add dsa-concept
@@ -61,6 +62,9 @@ aletheia show <card-id>
 # Edit a card
 aletheia edit <card-id>
 aletheia edit <card-id> --guided   # LLM-guided refinement
+
+# Get LLM quality feedback on a card
+aletheia check <card-id>
 
 # Search cards
 aletheia search "binary search"
