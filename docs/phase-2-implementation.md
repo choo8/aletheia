@@ -24,7 +24,8 @@ class AletheiaScheduler:
 
 Key components:
 - `ReviewRating` enum: AGAIN=1, HARD=2, GOOD=3, EASY=4
-- `ReviewResult` dataclass for review outcomes (due_next, interval_days, stability, etc.)
+- `CardState` StrEnum: NEW, LEARNING, REVIEW, RELEARNING - wraps FSRS `State` enum with `to_fsrs()`/`from_fsrs()` conversion methods; values work as strings for DB storage while providing type safety
+- `ReviewResult` dataclass for review outcomes (due_next, interval_days, stability, etc.); `state` field uses `CardState` type
 - Converts between FSRS Card objects and SQLite state
 - Uses existing `ReviewDatabase` methods: `get_card_state()`, `upsert_card_state()`, `log_review()`
 
@@ -66,6 +67,7 @@ Server-side LaTeX rendering:
 - Uses subprocess to call `katex` CLI with graceful fallback to raw LaTeX
 - LRU cache for performance (1000 entries)
 - Jinja2 filter registration for templates
+- Applied to all rendered card fields including `intuition` via `{{ card.intuition | katex | safe }}`
 
 ### Step 5: HTMX Templates
 
@@ -108,6 +110,7 @@ HTMX-powered endpoints:
 | CLI review is simple fallback | Web UI is primary interface; CLI for quick sessions |
 | Server-side KaTeX rendering | Faster perceived load, works without JS, cacheable |
 | HTMX partials for review flow | No full page reloads, smooth mobile experience |
+| `CardState` StrEnum for FSRS state mapping | Values work as strings for DB storage while providing type safety and `to_fsrs()`/`from_fsrs()` conversions |
 
 ---
 
@@ -137,7 +140,7 @@ HTMX-powered endpoints:
 | File | Changes |
 |------|---------|
 | `src/aletheia/cli/main.py` | Add `review` and `serve` commands |
-| `src/aletheia/core/__init__.py` | Export scheduler classes |
+| `src/aletheia/core/__init__.py` | Export `AletheiaScheduler`, `CardState`, `ReviewRating`, `ReviewResult` |
 
 ---
 
@@ -195,7 +198,7 @@ pytest tests/test_web.py -v
 
 | py-fsrs `Card` | Aletheia `card_states` table |
 |----------------|------------------------------|
-| `state` | `state` ('new', 'learning', 'review', 'relearning') |
+| `state` | `state` (via `CardState` StrEnum: 'new', 'learning', 'review', 'relearning') |
 | `stability` | `stability` (float) |
 | `difficulty` | `difficulty` (float) |
 | `due` | `due` (ISO datetime) |
