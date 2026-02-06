@@ -771,11 +771,11 @@ aletheia sync --pull               # Git pull
 - [x] HTMX templates for review UI
 - [x] KaTeX integration
 
-### Phase 3: LLM Integration
-- [ ] litellm setup
-- [ ] Mode 1: Guided extraction prompts
-- [ ] Mode 4: Quality feedback prompts
-- [ ] CLI integration
+### Phase 3: LLM Integration ✓
+- [x] litellm setup
+- [x] Mode 1: Guided extraction prompts
+- [x] Mode 4: Quality feedback prompts
+- [x] CLI integration (`--guided` flag and `check` command)
 
 ### Phase 4: Polish
 - [ ] Card lifecycle (reformulate, split, merge)

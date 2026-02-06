@@ -24,6 +24,7 @@ from aletheia.core.models import (
 )
 from aletheia.core.scheduler import AletheiaScheduler, ReviewRating
 from aletheia.core.storage import AletheiaStorage
+from aletheia.llm import LLMError, LLMService
 
 app = typer.Typer(
     name="aletheia",
@@ -78,13 +79,21 @@ def add(
         False,
         "--quick",
         "-q",
-        help="Quick add mode (skip guided extraction)",
+        help="Quick add mode (skip optional fields)",
+    ),
+    guided: bool = typer.Option(
+        False,
+        "--guided",
+        "-g",
+        help="Use LLM-guided extraction (Mode 1: Socratic questions)",
     ),
 ) -> None:
     """Add a new card interactively."""
     storage = get_storage()
 
-    if card_type == "dsa-problem":
+    if guided:
+        card = _add_guided(card_type)
+    elif card_type == "dsa-problem":
         card = _add_dsa_problem(quick)
     elif card_type == "dsa-concept":
         card = _add_dsa_concept(quick)
@@ -275,6 +284,139 @@ def _add_system_design(quick: bool) -> SystemDesignCard | None:
 
     rprint("\n[bold]Preview:[/bold]")
     _display_card(card)
+
+    if typer.confirm("\nSave this card?", default=True):
+        return card
+    return None
+
+
+def _add_guided(card_type: str) -> DSAProblemCard | DSAConceptCard | SystemDesignCard | None:
+    """LLM-guided card creation using Socratic questions."""
+    rprint(f"\n[bold]Guided Card Creation ({card_type})[/bold]")
+    rprint("[dim]The LLM will ask Socratic questions to help you articulate understanding.[/dim]\n")
+
+    # Get initial context from user
+    rprint("Describe what you learned (problem solved, concept understood, etc.):")
+    context = typer.prompt("Context")
+
+    if not context.strip():
+        rprint("[red]Context cannot be empty.[/red]")
+        return None
+
+    # Initialize LLM service
+    try:
+        llm = LLMService()
+    except Exception as e:
+        rprint(f"[red]Failed to initialize LLM: {e}[/red]")
+        rprint("[dim]Make sure ANTHROPIC_API_KEY or OPENAI_API_KEY is set.[/dim]")
+        return None
+
+    # Get Socratic questions from LLM
+    rprint("\n[dim]Generating questions...[/dim]")
+    try:
+        questions = llm.guided_extraction(context, card_type)
+    except LLMError as e:
+        rprint(f"[red]LLM error: {e}[/red]")
+        return None
+
+    if not questions:
+        rprint("[red]No questions generated. Please try again.[/red]")
+        return None
+
+    # Ask each question and collect answers
+    rprint("\n[bold]Answer these questions to create your card:[/bold]\n")
+    answers = []
+    for i, question in enumerate(questions, 1):
+        rprint(f"[cyan]Q{i}:[/cyan] {question}")
+        answer = typer.prompt("Your answer")
+        answers.append((question, answer))
+        rprint("")
+
+    # Structure answers into card content
+    # Use first Q&A as front/back, rest as supporting content
+    front = answers[0][0] if answers else "What did you learn?"
+    back = answers[0][1] if answers else ""
+
+    # Combine other answers into intuition/notes
+    intuition_parts = []
+    for q, a in answers[1:]:
+        if a.strip():
+            intuition_parts.append(f"{a}")
+    intuition = " ".join(intuition_parts) if intuition_parts else None
+
+    # Create card based on type
+    if card_type == "dsa-problem":
+        # Prompt for minimal required fields
+        rprint("\n[bold]Additional details:[/bold]")
+        platform = typer.prompt("Platform", default="leetcode")
+        problem_id = typer.prompt("Problem ID", default="")
+        title = typer.prompt("Problem title", default="")
+
+        source = LeetcodeSource(
+            platform=platform,
+            platform_id=problem_id,
+            title=title,
+            url=None,
+            difficulty="medium",
+        )
+
+        patterns_str = typer.prompt("Patterns (comma-separated)", default="")
+        patterns = [p.strip() for p in patterns_str.split(",") if p.strip()]
+
+        card = DSAProblemCard(
+            front=front,
+            back=back,
+            problem_source=source,
+            patterns=patterns,
+            intuition=intuition,
+            creation_mode=CreationMode.GUIDED_EXTRACTION,
+        )
+    elif card_type == "dsa-concept":
+        name = typer.prompt("Concept name", default="")
+        card = DSAConceptCard(
+            name=name,
+            front=front,
+            back=back,
+            intuition=intuition,
+            creation_mode=CreationMode.GUIDED_EXTRACTION,
+        )
+    elif card_type == "system-design":
+        name = typer.prompt("Concept name", default="")
+        card = SystemDesignCard(
+            name=name,
+            front=front,
+            back=back,
+            creation_mode=CreationMode.GUIDED_EXTRACTION,
+        )
+    else:
+        rprint(f"[red]Guided mode not supported for: {card_type}[/red]")
+        return None
+
+    # Preview and confirm
+    rprint("\n[bold]Preview:[/bold]")
+    _display_card(card, full=True)
+
+    # Offer to edit in $EDITOR
+    if typer.confirm("\nEdit in editor before saving?", default=False):
+        editable = {
+            "front": card.front,
+            "back": card.back,
+        }
+        if hasattr(card, "intuition") and card.intuition:
+            editable["intuition"] = card.intuition
+
+        content = json.dumps(editable, indent=2)
+        edited = open_in_editor(content, suffix=".json")
+
+        if edited.strip():
+            try:
+                data = json.loads(edited)
+                card.front = data.get("front", card.front)
+                card.back = data.get("back", card.back)
+                if "intuition" in data and hasattr(card, "intuition"):
+                    card.intuition = data.get("intuition")
+            except json.JSONDecodeError:
+                rprint("[yellow]Invalid JSON, keeping original content.[/yellow]")
 
     if typer.confirm("\nSave this card?", default=True):
         return card
@@ -545,6 +687,87 @@ def search(
     for card in results:
         _display_card(card)
         rprint("")
+
+
+# ============================================================================
+# CHECK command (Quality Feedback - Mode 4)
+# ============================================================================
+
+
+@app.command()
+def check(
+    card_id: str = typer.Argument(..., help="Card ID to check (or 'all')"),
+) -> None:
+    """Get LLM quality feedback on a card (Mode 4)."""
+    storage = get_storage()
+
+    # Handle --all case
+    if card_id.lower() == "all":
+        cards = storage.list_cards()
+        if not cards:
+            rprint("[dim]No cards found.[/dim]")
+            return
+
+        rprint(f"\n[bold]Checking {len(cards)} card(s)...[/bold]\n")
+        for card in cards:
+            _check_card(card)
+            rprint("")
+        return
+
+    # Find the card
+    card = _find_card(storage, card_id)
+    if card is None:
+        rprint(f"[red]Card not found: {card_id}[/red]")
+        raise typer.Exit(1)
+
+    _check_card(card)
+
+
+def _check_card(card) -> None:
+    """Check a single card and display feedback."""
+    rprint(f"[bold]Checking card:[/bold] {card.id[:8]}...")
+    rprint(f"[dim]Front: {card.front[:50]}{'...' if len(card.front) > 50 else ''}[/dim]\n")
+
+    try:
+        llm = LLMService()
+    except Exception as e:
+        rprint(f"[red]Failed to initialize LLM: {e}[/red]")
+        rprint("[dim]Make sure ANTHROPIC_API_KEY or OPENAI_API_KEY is set.[/dim]")
+        return
+
+    try:
+        feedback = llm.quality_feedback(card.front, card.back, card.type.value)
+    except LLMError as e:
+        rprint(f"[red]LLM error: {e}[/red]")
+        return
+
+    # Display overall quality
+    quality_color = {
+        "good": "green",
+        "needs_work": "yellow",
+        "poor": "red",
+    }.get(feedback.overall_quality, "white")
+    rprint(f"[{quality_color}]Overall: {feedback.overall_quality.upper()}[/{quality_color}]")
+
+    # Display strengths
+    if feedback.strengths:
+        rprint("\n[green]Strengths:[/green]")
+        for strength in feedback.strengths:
+            rprint(f"  [green]✓[/green] {strength}")
+
+    # Display issues
+    if feedback.issues:
+        rprint("\n[yellow]Issues:[/yellow]")
+        for issue in feedback.issues:
+            rprint(f"  [yellow]⚠[/yellow] {issue.type}: {issue.description}")
+            if issue.suggestion:
+                rprint(f"    [dim]→ {issue.suggestion}[/dim]")
+
+    # Display suggestions
+    if feedback.suggested_front:
+        rprint(f"\n[cyan]Suggested front:[/cyan] {feedback.suggested_front}")
+    if feedback.suggested_back:
+        rprint(f"[cyan]Suggested back:[/cyan] {feedback.suggested_back}")
 
 
 # ============================================================================
