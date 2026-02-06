@@ -22,7 +22,7 @@ Unlike traditional flashcard apps optimized for rote memorization, Aletheia is d
 - **FSRS algorithm** for optimized spaced repetition
 - **LLM-assisted card creation** (guided extraction, quality feedback)
 - **CLI** for card management
-- **Mobile-friendly web interface** for review (coming soon)
+- **Mobile-friendly web interface** for review
 
 ## Installation
 
@@ -66,6 +66,15 @@ aletheia search "binary search"
 
 # View statistics
 aletheia stats
+
+# Start interactive review session
+aletheia review
+aletheia review --limit 10   # Limit number of cards
+aletheia review --new 3      # Limit new cards
+
+# Start web server
+aletheia serve               # Start on port 8000
+aletheia serve --port 3000   # Custom port
 ```
 
 ## Project Structure
@@ -109,7 +118,7 @@ uv run ruff check src/
 ## Roadmap
 
 - [x] **Phase 1**: Core foundation (models, storage, CLI)
-- [ ] **Phase 2**: Review system (FSRS, web UI, KaTeX)
+- [x] **Phase 2**: Review system (FSRS, web UI, KaTeX)
 - [ ] **Phase 3**: LLM integration (guided extraction, quality feedback)
 - [ ] **Phase 4**: Polish (lifecycle features, stats, search)
 
