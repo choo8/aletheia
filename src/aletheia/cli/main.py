@@ -571,6 +571,12 @@ def _display_card(card, full: bool = False) -> None:
 @app.command()
 def edit(
     card_id: str = typer.Argument(..., help="Card ID to edit"),
+    guided: bool = typer.Option(
+        False,
+        "--guided",
+        "-g",
+        help="Use LLM-guided Socratic questions to refine the card",
+    ),
 ) -> None:
     """Edit a card in your editor."""
     storage = get_storage()
@@ -579,6 +585,10 @@ def edit(
     if card is None:
         rprint(f"[red]Card not found: {card_id}[/red]")
         raise typer.Exit(1)
+
+    if guided:
+        _edit_guided(card, storage)
+        return
 
     # Create a simplified editable version
     editable = {
@@ -628,6 +638,185 @@ def edit(
 
     path = storage.save_card(card)
     rprint(f"[green]Card updated![/green] {path}")
+
+
+def _format_card_for_llm(card) -> str:
+    """Convert a card to a readable string for LLM context."""
+    lines = [
+        f"Type: {card.type.value}",
+        f"Front: {card.front}",
+        f"Back: {card.back}",
+    ]
+
+    if hasattr(card, "name") and card.name:
+        lines.append(f"Name: {card.name}")
+    if hasattr(card, "intuition") and card.intuition:
+        lines.append(f"Intuition: {card.intuition}")
+    if hasattr(card, "patterns") and card.patterns:
+        lines.append(f"Patterns: {', '.join(card.patterns)}")
+    if hasattr(card, "edge_cases") and card.edge_cases:
+        lines.append(f"Edge cases: {', '.join(card.edge_cases)}")
+    if hasattr(card, "definition") and card.definition:
+        lines.append(f"Definition: {card.definition}")
+    if hasattr(card, "when_to_use") and card.when_to_use:
+        lines.append(f"When to use: {card.when_to_use}")
+    if hasattr(card, "when_not_to_use") and card.when_not_to_use:
+        lines.append(f"When not to use: {card.when_not_to_use}")
+    if hasattr(card, "how_it_works") and card.how_it_works:
+        lines.append(f"How it works: {card.how_it_works}")
+    if hasattr(card, "use_cases") and card.use_cases:
+        lines.append(f"Use cases: {', '.join(card.use_cases)}")
+    if hasattr(card, "anti_patterns") and card.anti_patterns:
+        lines.append(f"Anti-patterns: {', '.join(card.anti_patterns)}")
+    if hasattr(card, "common_patterns") and card.common_patterns:
+        lines.append(f"Common patterns: {', '.join(card.common_patterns)}")
+    if hasattr(card, "data_structures") and card.data_structures:
+        lines.append(f"Data structures: {', '.join(card.data_structures)}")
+    if hasattr(card, "complexity") and card.complexity:
+        lines.append(f"Complexity: Time {card.complexity.time}, Space {card.complexity.space}")
+    if card.tags:
+        lines.append(f"Tags: {', '.join(card.tags)}")
+
+    return "\n".join(lines)
+
+
+def _build_edit_from_answers(card, answers: list[tuple[str, str]], new_context: str) -> dict:
+    """Build an editable dict from guided Q&A answers and existing card.
+
+    Includes transient _guided_qa_reference and _new_context keys as editor
+    reference material. These underscore-prefixed keys are silently skipped
+    when applying updates (no matching attribute on card).
+    """
+    # Build Q&A reference string
+    qa_lines = []
+    for q, a in answers:
+        qa_lines.append(f"Q: {q}")
+        qa_lines.append(f"A: {a}")
+        qa_lines.append("")
+    qa_reference = "\n".join(qa_lines).strip()
+
+    editable = {
+        "_guided_qa_reference": qa_reference,
+        "_new_context": new_context,
+        "id": card.id,
+        "type": card.type.value,
+        "front": card.front,
+        "back": card.back,
+        "tags": card.tags,
+        "taxonomy": card.taxonomy,
+        "maturity": card.maturity.value,
+    }
+
+    # Add type-specific fields
+    if hasattr(card, "name"):
+        editable["name"] = card.name
+    if hasattr(card, "patterns"):
+        editable["patterns"] = card.patterns
+    if hasattr(card, "intuition"):
+        editable["intuition"] = card.intuition or ""
+    if hasattr(card, "edge_cases"):
+        editable["edge_cases"] = card.edge_cases
+    if hasattr(card, "definition"):
+        editable["definition"] = card.definition or ""
+    if hasattr(card, "when_to_use"):
+        editable["when_to_use"] = card.when_to_use or ""
+    if hasattr(card, "when_not_to_use"):
+        editable["when_not_to_use"] = card.when_not_to_use or ""
+    if hasattr(card, "how_it_works"):
+        editable["how_it_works"] = card.how_it_works or ""
+    if hasattr(card, "use_cases"):
+        editable["use_cases"] = card.use_cases
+    if hasattr(card, "anti_patterns"):
+        editable["anti_patterns"] = card.anti_patterns
+
+    return editable
+
+
+def _edit_guided(card, storage: AletheiaStorage) -> None:
+    """LLM-guided card editing using Socratic questions about the delta."""
+    rprint(f"\n[bold]Guided Edit ({card.type.value})[/bold]")
+    rprint("[dim]The LLM will ask questions about what changed in your understanding.[/dim]\n")
+
+    # Display existing card
+    _display_card(card, full=True)
+
+    # Get new context from user
+    rprint("\nDescribe what changed in your understanding:")
+    new_context = typer.prompt("New context")
+
+    if not new_context.strip():
+        rprint("[red]Context cannot be empty.[/red]")
+        return
+
+    # Initialize LLM service
+    try:
+        llm = LLMService()
+    except Exception as e:
+        rprint(f"[red]Failed to initialize LLM: {e}[/red]")
+        rprint("[dim]Make sure ANTHROPIC_API_KEY or OPENAI_API_KEY is set.[/dim]")
+        return
+
+    # Format existing card for LLM
+    existing_content = _format_card_for_llm(card)
+
+    # Get Socratic questions from LLM
+    rprint("\n[dim]Generating questions...[/dim]")
+    try:
+        questions = llm.guided_edit_extraction(existing_content, new_context, card.type.value)
+    except LLMError as e:
+        rprint(f"[red]LLM error: {e}[/red]")
+        return
+
+    if not questions:
+        rprint("[red]No questions generated. Please try again.[/red]")
+        return
+
+    # Ask each question and collect answers
+    rprint("\n[bold]Answer these questions to refine your card:[/bold]\n")
+    answers = []
+    for i, question in enumerate(questions, 1):
+        rprint(f"[cyan]Q{i}:[/cyan] {question}")
+        answer = typer.prompt("Your answer")
+        answers.append((question, answer))
+        rprint("")
+
+    # Build editable dict with Q&A reference
+    editable = _build_edit_from_answers(card, answers, new_context)
+
+    # Open in editor for fine-tuning
+    content = json.dumps(editable, indent=2)
+    edited_content = open_in_editor(content, suffix=".json")
+
+    if not edited_content.strip():
+        rprint("[yellow]Edit cancelled (empty content).[/yellow]")
+        return
+
+    try:
+        edited = json.loads(edited_content)
+    except json.JSONDecodeError as e:
+        rprint(f"[red]Invalid JSON: {e}[/red]")
+        return
+
+    # Apply updates (skip underscore-prefixed keys and immutable fields)
+    for key, value in edited.items():
+        if key.startswith("_") or key in ["id", "type"]:
+            continue
+        if hasattr(card, key):
+            setattr(card, key, value)
+
+    # Handle maturity separately (it's an enum)
+    if "maturity" in edited:
+        card.maturity = Maturity(edited["maturity"])
+
+    # Preview
+    rprint("\n[bold]Preview:[/bold]")
+    _display_card(card, full=True)
+
+    if typer.confirm("\nSave changes?", default=True):
+        path = storage.save_card(card)
+        rprint(f"[green]Card updated![/green] {path}")
+    else:
+        rprint("[yellow]Changes discarded.[/yellow]")
 
 
 # ============================================================================

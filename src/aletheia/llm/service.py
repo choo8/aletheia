@@ -4,7 +4,11 @@ import json
 import os
 from dataclasses import dataclass, field
 
-from aletheia.llm.prompts import get_extraction_prompt, get_quality_prompt
+from aletheia.llm.prompts import (
+    get_edit_extraction_prompt,
+    get_extraction_prompt,
+    get_quality_prompt,
+)
 
 
 @dataclass
@@ -84,6 +88,42 @@ class LLMService:
         """
         system_prompt = get_extraction_prompt(domain)
         response = self._get_completion(system_prompt, context)
+
+        # Parse JSON response
+        try:
+            # Handle potential markdown code blocks
+            text = response.strip()
+            if text.startswith("```"):
+                # Remove markdown code fence
+                lines = text.split("\n")
+                text = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
+
+            questions = json.loads(text)
+            if not isinstance(questions, list):
+                raise LLMError("Expected a list of questions")
+            return [str(q) for q in questions]
+        except json.JSONDecodeError as e:
+            raise LLMError(f"Failed to parse LLM response as JSON: {e}") from e
+
+    def guided_edit_extraction(
+        self, existing_card_content: str, new_context: str, domain: str
+    ) -> list[str]:
+        """Generate Socratic questions for refining an existing card.
+
+        Args:
+            existing_card_content: Formatted string of the existing card
+            new_context: User's description of what changed in their understanding
+            domain: Card domain (dsa-problem, dsa-concept, system-design, etc.)
+
+        Returns:
+            List of Socratic questions focused on the delta
+
+        Raises:
+            LLMError: If the API call fails or response is invalid
+        """
+        system_prompt = get_edit_extraction_prompt(domain)
+        user_message = f"EXISTING CARD:\n{existing_card_content}\n\nNEW CONTEXT:\n{new_context}"
+        response = self._get_completion(system_prompt, user_message)
 
         # Parse JSON response
         try:

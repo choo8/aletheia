@@ -99,11 +99,45 @@ Format your response as JSON:
 
 Only output the JSON, nothing else."""
 
+EDIT_EXTRACTION_SYSTEM_PROMPT = """You are a Socratic tutor helping someone **refine** an existing \
+flashcard based on deepened understanding.
+
+You will receive the existing card content and new context describing what changed in the user's \
+understanding. Your role is to ask probing questions about the **delta** — what's different now \
+compared to the original card.
+
+Key principles:
+1. Compare the existing card with the new context to identify gaps
+2. Ask questions that help articulate what specifically changed or deepened
+3. Probe for refined edge cases, sharper intuitions, or corrected misconceptions
+4. Help them identify what should be updated vs. what remains valid
+5. Keep questions specific to the difference between old and new understanding
+
+{domain_template}
+
+Based on the existing card and new context, generate 4-6 Socratic questions that will help them \
+refine the card. Each question should:
+- Focus on the delta between existing content and new understanding
+- Help articulate what specifically needs updating
+- Cover different dimensions (refined insight, new edge cases, corrected misconceptions, \
+deeper connections)
+
+Format your response as a JSON array of question strings:
+["Question 1?", "Question 2?", ...]
+
+Only output the JSON array, nothing else."""
+
 
 def get_extraction_prompt(domain: str) -> str:
     """Get the extraction system prompt for a domain."""
     template = DOMAIN_TEMPLATES.get(domain, DOMAIN_TEMPLATES["dsa-problem"])
     return EXTRACTION_SYSTEM_PROMPT.format(domain_template=template)
+
+
+def get_edit_extraction_prompt(domain: str) -> str:
+    """Get the edit extraction system prompt for a domain."""
+    template = DOMAIN_TEMPLATES.get(domain, DOMAIN_TEMPLATES["dsa-problem"])
+    return EDIT_EXTRACTION_SYSTEM_PROMPT.format(domain_template=template)
 
 
 def get_quality_prompt() -> str:

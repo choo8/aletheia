@@ -20,7 +20,7 @@ Unlike traditional flashcard apps optimized for rote memorization, Aletheia is d
 - **Multiple card types** with domain-specific schemas
 - **Hybrid storage**: JSON files (git-friendly) + SQLite (fast queries)
 - **FSRS algorithm** for optimized spaced repetition
-- **LLM-assisted card creation** (guided extraction, quality feedback)
+- **LLM-assisted card creation and refinement** (guided extraction, guided editing, quality feedback)
 - **CLI** for card management
 - **Mobile-friendly web interface** for review
 
@@ -60,6 +60,7 @@ aletheia show <card-id>
 
 # Edit a card
 aletheia edit <card-id>
+aletheia edit <card-id> --guided   # LLM-guided refinement
 
 # Search cards
 aletheia search "binary search"
@@ -119,7 +120,7 @@ uv run ruff check src/
 
 - [x] **Phase 1**: Core foundation (models, storage, CLI)
 - [x] **Phase 2**: Review system (FSRS, web UI, KaTeX)
-- [ ] **Phase 3**: LLM integration (guided extraction, quality feedback)
+- [x] **Phase 3**: LLM integration (guided extraction, guided editing, quality feedback)
 - [ ] **Phase 4**: Polish (lifecycle features, stats, search)
 
 ## License

@@ -2,8 +2,9 @@
 
 ## Overview
 
-Implement LLM-assisted card creation with two modes:
-- **Mode 1 (Guided Extraction)**: Socratic questioning to help users articulate understanding
+Implement LLM-assisted card creation and refinement with three capabilities:
+- **Mode 1 (Guided Extraction)**: Socratic questioning to help users articulate understanding when creating new cards
+- **Mode 1b (Guided Edit)**: Socratic questioning focused on the *delta* when refining existing cards
 - **Mode 4 (Quality Feedback)**: Review card quality and teach prompt-writing skills
 
 Uses `litellm` for provider-agnostic LLM access (Claude, GPT-4, Ollama, etc.).
@@ -29,6 +30,7 @@ litellm wrapper with core methods:
 class LLMService:
     def __init__(self, model: str = "claude-sonnet-4-20250514")
     async def guided_extraction(self, context: str, domain: str) -> list[str]
+    async def guided_edit_extraction(self, existing_card_content: str, new_context: str, domain: str) -> list[str]
     async def quality_feedback(self, card: Card) -> QualityFeedback
 ```
 
@@ -42,8 +44,9 @@ Features:
 
 **File:** `src/aletheia/llm/prompts.py` (NEW)
 
-Two main prompts:
-- `EXTRACTION_SYSTEM_PROMPT` - Generates Socratic questions based on domain
+Three main prompts:
+- `EXTRACTION_SYSTEM_PROMPT` - Generates Socratic questions for new card creation
+- `EDIT_EXTRACTION_SYSTEM_PROMPT` - Generates Socratic questions focused on the delta when refining existing cards
 - `QUALITY_SYSTEM_PROMPT` - Reviews card quality against Matuschak's principles
 
 Domain-specific question templates embedded in extraction prompt.
@@ -57,6 +60,13 @@ Add `--guided` flag to `add` command:
 ```bash
 aletheia add dsa-problem --guided    # Mode 1: LLM asks Socratic questions
 aletheia add dsa-problem             # Default: manual entry (unchanged)
+```
+
+Add `--guided` flag to `edit` command:
+
+```bash
+aletheia edit <card-id> --guided     # Mode 1b: LLM asks Socratic questions about the delta
+aletheia edit <card-id>              # Default: open in $EDITOR (unchanged)
 ```
 
 Add new `check` command:
@@ -91,7 +101,7 @@ aletheia check --all                 # Check all cards
 | File | Changes |
 |------|---------|
 | `src/aletheia/llm/__init__.py` | Export LLMService |
-| `src/aletheia/cli/main.py` | Add `--guided` flag and `check` command |
+| `src/aletheia/cli/main.py` | Add `--guided` flag to `add` and `edit`, add `check` command |
 | `pyproject.toml` | Ensure `litellm` in `[llm]` extras |
 
 ---
@@ -122,6 +132,38 @@ User: aletheia add dsa-problem --guided
 
 6. Card saved with creation_mode=GUIDED_EXTRACTION
 ```
+
+---
+
+## Mode 1b: Guided Edit Flow
+
+```
+User: aletheia edit abc123 --guided
+
+1. Display existing card content
+
+2. Prompt: "Describe what changed in your understanding:"
+   User: "Realized the two-pointer approach also handles negative heights"
+
+3. LLM compares existing card with new context, generates delta-focused questions:
+   - "How does this new insight change the edge cases you originally identified?"
+   - "Does this affect the invariant the pointers maintain?"
+   - "Should the intuition field be updated to reflect this?"
+   - "Are there new related problems this connects to?"
+
+4. User answers each question interactively
+
+5. Answers + existing card fields opened in $EDITOR for fine-tuning
+   (Q&A summary included as reference material via _guided_qa_reference key)
+
+6. User confirms save → card updated (lifecycle.edit_count incremented via touch())
+```
+
+**Key differences from Mode 1:**
+- LLM sees existing card content alongside new context
+- Questions probe the *delta* in understanding, not create from scratch
+- Editor step is always shown (mapping from Q&A to field updates is ambiguous)
+- `creation_mode` is not changed (records how card was *created*, not last edited)
 
 ---
 
@@ -208,6 +250,16 @@ export ANTHROPIC_API_KEY=sk-...
 aletheia add dsa-problem --guided
 # Should prompt for context, then ask Socratic questions
 # Answers should be structured into card
+```
+
+### Mode 1b (Guided Edit)
+
+```bash
+export ANTHROPIC_API_KEY=sk-...
+aletheia edit <card-id> --guided
+# Should display existing card, prompt for new context
+# LLM asks delta-focused Socratic questions
+# Answers + existing fields opened in $EDITOR for fine-tuning
 ```
 
 ### Mode 4 (Quality Feedback)
