@@ -779,12 +779,22 @@ aletheia sync --pull               # Git pull
 - [x] Mode 4: Quality feedback prompts
 - [x] CLI integration (`--guided` flag on `add` and `edit`, `check` command)
 
-### Phase 4: Polish
-- [ ] Card lifecycle (reformulate, split, merge)
-- [ ] Statistics dashboard
-- [ ] Search (SQLite FTS5)
+### Phase 4a: Card Lifecycle
+- [ ] Simple state transitions: `suspend`, `resume`, `exhaust` CLI commands
+- [ ] Add `suspended` maturity state to card model
+- [ ] Structural operations: `reformulate`, `split`, `merge` CLI commands
+- [ ] Lifecycle metadata (`suspended_at`, `exhausted_at`, `exhausted_reason`, links between cards)
+
+### Phase 4b: Search
+- [ ] SQLite FTS5 full-text search (replace naive search)
+
+### Phase 4c: Statistics Dashboard
+- [ ] Richer CLI stats (per-domain, streaks)
+- [ ] Review heatmap in web UI
+
+### Phase 4d: Polish
 - [ ] Mobile responsive refinement
-- [ ] Git sync helper commands
+- [ ] Git sync helper commands (`aletheia sync`)
 
 ---
 

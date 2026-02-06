@@ -3,11 +3,19 @@
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 
+from aletheia.core.models import Maturity
 from aletheia.core.scheduler import AletheiaScheduler, ReviewRating
 from aletheia.core.storage import AletheiaStorage
 from aletheia.web.dependencies import get_scheduler, get_storage, get_templates
 
 router = APIRouter()
+
+
+def _filter_active(storage: AletheiaStorage, card_ids: list[str]) -> list[str]:
+    """Filter card IDs to only include active (non-suspended/exhausted) cards."""
+    return [
+        cid for cid in card_ids if (c := storage.load_card(cid)) and c.maturity == Maturity.ACTIVE
+    ]
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -23,6 +31,7 @@ async def review_session(
     due_cards = scheduler.get_due_cards(limit=20)
     new_cards = scheduler.get_new_cards(limit=5)
     card_ids = due_cards + [c for c in new_cards if c not in due_cards]
+    card_ids = _filter_active(storage, card_ids)
 
     if not card_ids:
         return templates.TemplateResponse(
@@ -62,6 +71,7 @@ async def reveal_answer(
     due_cards = scheduler.get_due_cards(limit=20)
     new_cards = scheduler.get_new_cards(limit=5)
     card_ids = due_cards + [c for c in new_cards if c not in due_cards]
+    card_ids = _filter_active(storage, card_ids)
 
     return templates.TemplateResponse(
         request,
@@ -92,6 +102,7 @@ async def rate_card(
     due_cards = scheduler.get_due_cards(limit=20)
     new_cards = scheduler.get_new_cards(limit=5)
     card_ids = due_cards + [c for c in new_cards if c not in due_cards]
+    card_ids = _filter_active(storage, card_ids)
 
     if not card_ids:
         return templates.TemplateResponse(
