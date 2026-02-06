@@ -557,11 +557,14 @@ A working end-to-end flow for DSA and System Design knowledge capture and review
    - Tech stack: Python + FastAPI + HTMX + Jinja2
    - API design, CLI commands, card lifecycle
    - Hosting: Koyeb free tier
-6. **Build MVP** ← Next
-   - Phase 1: Core foundation (models, storage, basic CLI)
-   - Phase 2: Review system (FSRS, web UI, KaTeX)
-   - Phase 3: LLM integration (litellm, Mode 1 & 4)
-   - Phase 4: Polish (lifecycle features, stats, search)
+6. **Build MVP**
+   - Phase 1: Core foundation (models, storage, basic CLI) ✓
+   - Phase 2: Review system (FSRS, web UI, KaTeX) ✓
+   - Phase 3: LLM integration (litellm, Mode 1 & 4) ✓
+   - Phase 4a: Card lifecycle (suspend, resume, exhaust, reformulate, split, merge) ← Next
+   - Phase 4b: Search (SQLite FTS5)
+   - Phase 4c: Statistics dashboard
+   - Phase 4d: Polish (mobile responsive, git sync)
 
 ---
 

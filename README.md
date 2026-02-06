@@ -21,6 +21,7 @@ Unlike traditional flashcard apps optimized for rote memorization, Aletheia is d
 - **Hybrid storage**: JSON files (git-friendly) + SQLite (fast queries)
 - **FSRS algorithm** for optimized spaced repetition
 - **LLM-assisted card creation and refinement** (guided extraction, guided editing, quality feedback)
+- **Card lifecycle management** - suspend, resume, exhaust, reformulate, split, and merge cards
 - **CLI** for card management
 - **Mobile-friendly web interface** for review
 
@@ -77,6 +78,15 @@ aletheia review
 aletheia review --limit 10   # Limit number of cards
 aletheia review --new 3      # Limit new cards
 
+# Card lifecycle management
+aletheia suspend <card-id>              # Pause reviews for a card
+aletheia resume <card-id>               # Re-enable reviews
+aletheia exhaust <card-id> -r duplicate # Permanently retire a card
+aletheia reformulate <card-id>          # Create improved card, retire original
+aletheia reformulate <card-id> -g       # LLM-guided reformulation
+aletheia split <card-id>                # Split into multiple cards
+aletheia merge <id1> <id2>              # Merge cards into one
+
 # Start web server
 aletheia serve               # Start on port 8000
 aletheia serve --port 3000   # Custom port
@@ -125,7 +135,11 @@ uv run ruff check src/
 - [x] **Phase 1**: Core foundation (models, storage, CLI)
 - [x] **Phase 2**: Review system (FSRS, web UI, KaTeX)
 - [x] **Phase 3**: LLM integration (guided extraction, guided editing, quality feedback)
-- [ ] **Phase 4**: Polish (lifecycle features, stats, search)
+- [ ] **Phase 4**: Polish (card lifecycle, stats, search)
+  - [x] **Phase 4a**: Card lifecycle commands (suspend, resume, exhaust, reformulate, split, merge)
+  - [ ] **Phase 4b**: Search (SQLite FTS5 full-text search)
+  - [ ] **Phase 4c**: Statistics dashboard (per-domain stats, streaks, review heatmap)
+  - [ ] **Phase 4d**: Polish (mobile responsive refinement, git sync helpers)
 
 ## License
 

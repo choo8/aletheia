@@ -13,6 +13,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from aletheia.core.models import (
+    AnyCard,
     CardType,
     Complexity,
     CreationMode,
@@ -21,6 +22,8 @@ from aletheia.core.models import (
     LeetcodeSource,
     Maturity,
     SystemDesignCard,
+    card_from_dict,
+    utcnow,
 )
 from aletheia.core.scheduler import AletheiaScheduler, ReviewRating
 from aletheia.core.storage import AletheiaStorage
@@ -642,6 +645,54 @@ def edit(
     rprint(f"[green]Card updated![/green] {path}")
 
 
+def _build_editable_from_card(card) -> dict:
+    """Extract editable fields from a card for use in the editor."""
+    editable = {
+        "type": card.type.value,
+        "front": card.front,
+        "back": card.back,
+        "tags": card.tags,
+        "taxonomy": card.taxonomy,
+    }
+
+    # Add type-specific fields
+    if hasattr(card, "name"):
+        editable["name"] = card.name
+    if hasattr(card, "patterns"):
+        editable["patterns"] = card.patterns
+    if hasattr(card, "intuition"):
+        editable["intuition"] = card.intuition or ""
+    if hasattr(card, "edge_cases"):
+        editable["edge_cases"] = card.edge_cases
+    if hasattr(card, "definition"):
+        editable["definition"] = card.definition or ""
+    if hasattr(card, "when_to_use"):
+        editable["when_to_use"] = card.when_to_use or ""
+    if hasattr(card, "when_not_to_use"):
+        editable["when_not_to_use"] = card.when_not_to_use or ""
+    if hasattr(card, "how_it_works"):
+        editable["how_it_works"] = card.how_it_works or ""
+    if hasattr(card, "use_cases"):
+        editable["use_cases"] = card.use_cases
+    if hasattr(card, "anti_patterns"):
+        editable["anti_patterns"] = card.anti_patterns
+    if hasattr(card, "common_patterns"):
+        editable["common_patterns"] = card.common_patterns
+    if hasattr(card, "data_structures"):
+        editable["data_structures"] = card.data_structures
+
+    return editable
+
+
+def _create_card_from_edited(edited: dict) -> AnyCard:
+    """Create a new card (fresh ID) from editor output dict."""
+    # Remove id if present — new card gets a fresh one
+    edited.pop("id", None)
+    # Remove underscore-prefixed keys (transient editor references)
+    cleaned = {k: v for k, v in edited.items() if not k.startswith("_")}
+    return card_from_dict(cleaned)
+
+
 def _format_card_for_llm(card) -> str:
     """Convert a card to a readable string for LLM context."""
     lines = [
@@ -994,6 +1045,11 @@ def review(
     # Combine, avoiding duplicates
     card_ids = due_ids + [c for c in new_ids if c not in due_ids]
 
+    # Filter out non-active cards (suspended/exhausted)
+    card_ids = [
+        cid for cid in card_ids if (c := storage.load_card(cid)) and c.maturity == Maturity.ACTIVE
+    ]
+
     if not card_ids:
         rprint("[green]No cards due for review![/green]")
         return
@@ -1066,6 +1122,351 @@ def _prompt_rating() -> ReviewRating | None:
         except ValueError:
             pass
         rprint("[red]Invalid choice. Enter 1-4 or q to quit.[/red]")
+
+
+# ============================================================================
+# LIFECYCLE commands (suspend, resume, exhaust, reformulate, split, merge)
+# ============================================================================
+
+
+@app.command()
+def suspend(
+    card_id: str = typer.Argument(..., help="Card ID to suspend"),
+) -> None:
+    """Suspend a card (pause reviews without losing progress)."""
+    storage = get_storage()
+    card = _find_card(storage, card_id)
+
+    if card is None:
+        rprint(f"[red]Card not found: {card_id}[/red]")
+        raise typer.Exit(1)
+
+    if card.maturity == Maturity.EXHAUSTED:
+        rprint(f"[red]Cannot suspend an exhausted card: {card.id[:8]}[/red]")
+        raise typer.Exit(1)
+
+    if card.maturity == Maturity.SUSPENDED:
+        rprint(f"[yellow]Card is already suspended: {card.id[:8]}[/yellow]")
+        return
+
+    card.maturity = Maturity.SUSPENDED
+    card.lifecycle.suspended_at = utcnow()
+    storage.save_card(card)
+    rprint(f"[green]Card suspended:[/green] {card.id[:8]}")
+
+
+@app.command()
+def resume(
+    card_id: str = typer.Argument(..., help="Card ID to resume"),
+) -> None:
+    """Resume a suspended card (re-enable reviews)."""
+    storage = get_storage()
+    card = _find_card(storage, card_id)
+
+    if card is None:
+        rprint(f"[red]Card not found: {card_id}[/red]")
+        raise typer.Exit(1)
+
+    if card.maturity != Maturity.SUSPENDED:
+        mat = card.maturity.value
+        rprint(f"[yellow]Card is not suspended: {card.id[:8]} (maturity: {mat})[/yellow]")
+        return
+
+    card.maturity = Maturity.ACTIVE
+    card.lifecycle.suspended_at = None
+    storage.save_card(card)
+    rprint(f"[green]Card resumed:[/green] {card.id[:8]}")
+
+
+@app.command()
+def exhaust(
+    card_id: str = typer.Argument(..., help="Card ID to exhaust"),
+    reason: str = typer.Option(
+        "",
+        "--reason",
+        "-r",
+        help="Reason for exhausting (e.g., understanding_deepened, duplicate, split, merged)",
+    ),
+) -> None:
+    """Mark a card as exhausted (permanently retire from reviews)."""
+    storage = get_storage()
+    card = _find_card(storage, card_id)
+
+    if card is None:
+        rprint(f"[red]Card not found: {card_id}[/red]")
+        raise typer.Exit(1)
+
+    if card.maturity == Maturity.EXHAUSTED:
+        rprint(f"[yellow]Card is already exhausted: {card.id[:8]}[/yellow]")
+        return
+
+    _display_card(card)
+
+    if not reason:
+        reason = typer.prompt(
+            "Reason for exhausting",
+            default="understanding_deepened",
+        )
+
+    if not typer.confirm(f"\nExhaust card {card.id[:8]}?", default=True):
+        rprint("[yellow]Cancelled.[/yellow]")
+        return
+
+    card.maturity = Maturity.EXHAUSTED
+    card.lifecycle.exhausted_at = utcnow()
+    card.lifecycle.exhausted_reason = reason
+    storage.save_card(card)
+    rprint(f"[green]Card exhausted:[/green] {card.id[:8]} (reason: {reason})")
+
+
+# ============================================================================
+# REFORMULATE command
+# ============================================================================
+
+
+@app.command()
+def reformulate(
+    card_id: str = typer.Argument(..., help="Card ID to reformulate"),
+    guided: bool = typer.Option(
+        False,
+        "--guided",
+        "-g",
+        help="Use LLM-guided Socratic questions for the new card",
+    ),
+) -> None:
+    """Create a new card from an existing one, exhausting the original."""
+    storage = get_storage()
+    card = _find_card(storage, card_id)
+
+    if card is None:
+        rprint(f"[red]Card not found: {card_id}[/red]")
+        raise typer.Exit(1)
+
+    if card.maturity == Maturity.EXHAUSTED:
+        rprint(f"[red]Cannot reformulate an exhausted card: {card.id[:8]}[/red]")
+        raise typer.Exit(1)
+
+    rprint("\n[bold]Reformulating card:[/bold]")
+    _display_card(card, full=True)
+
+    if not typer.confirm("\nProceed with reformulation?", default=True):
+        rprint("[yellow]Cancelled.[/yellow]")
+        return
+
+    if guided:
+        new_card = _add_guided(card.type.value)
+    else:
+        editable = _build_editable_from_card(card)
+        content = json.dumps(editable, indent=2)
+        edited_content = open_in_editor(content, suffix=".json")
+
+        if not edited_content.strip():
+            rprint("[yellow]Reformulation cancelled (empty content).[/yellow]")
+            return
+
+        try:
+            edited = json.loads(edited_content)
+        except json.JSONDecodeError as e:
+            rprint(f"[red]Invalid JSON: {e}[/red]")
+            raise typer.Exit(1)
+
+        new_card = _create_card_from_edited(edited)
+
+    if new_card is None:
+        rprint("[yellow]Reformulation cancelled.[/yellow]")
+        return
+
+    # Set lifecycle link
+    new_card.lifecycle.reformulated_from = card.id
+
+    # Save new card
+    new_path = storage.save_card(new_card)
+    rprint(f"\n[green]New card created:[/green] {new_card.id[:8]} ({new_path})")
+
+    # Exhaust original
+    card.maturity = Maturity.EXHAUSTED
+    card.lifecycle.exhausted_at = utcnow()
+    card.lifecycle.exhausted_reason = "understanding_deepened"
+    storage.save_card(card)
+    rprint(f"[dim]Original card exhausted:[/dim] {card.id[:8]}")
+
+
+# ============================================================================
+# SPLIT command
+# ============================================================================
+
+
+@app.command()
+def split(
+    card_id: str = typer.Argument(..., help="Card ID to split"),
+) -> None:
+    """Split a card into multiple new cards, exhausting the original."""
+    storage = get_storage()
+    card = _find_card(storage, card_id)
+
+    if card is None:
+        rprint(f"[red]Card not found: {card_id}[/red]")
+        raise typer.Exit(1)
+
+    if card.maturity == Maturity.EXHAUSTED:
+        rprint(f"[red]Cannot split an exhausted card: {card.id[:8]}[/red]")
+        raise typer.Exit(1)
+
+    rprint("\n[bold]Splitting card:[/bold]")
+    _display_card(card, full=True)
+
+    count = typer.prompt("\nHow many new cards?", default="2", type=int)
+    if count < 2:
+        rprint("[red]Must split into at least 2 cards.[/red]")
+        raise typer.Exit(1)
+
+    new_cards = []
+    for i in range(count):
+        rprint(f"\n[bold]--- New card {i + 1}/{count} ---[/bold]")
+        editable = _build_editable_from_card(card)
+        content = json.dumps(editable, indent=2)
+        edited_content = open_in_editor(content, suffix=".json")
+
+        if not edited_content.strip():
+            rprint(f"[yellow]Card {i + 1} skipped (empty content).[/yellow]")
+            continue
+
+        try:
+            edited = json.loads(edited_content)
+        except json.JSONDecodeError as e:
+            rprint(f"[red]Invalid JSON for card {i + 1}: {e}[/red]")
+            continue
+
+        new_card = _create_card_from_edited(edited)
+        new_card.lifecycle.split_from = card.id
+        new_cards.append(new_card)
+
+    if not new_cards:
+        rprint("[yellow]No cards created. Split cancelled.[/yellow]")
+        return
+
+    # Save all new cards
+    for nc in new_cards:
+        path = storage.save_card(nc)
+        rprint(f"[green]New card created:[/green] {nc.id[:8]} ({path})")
+
+    # Exhaust original
+    card.maturity = Maturity.EXHAUSTED
+    card.lifecycle.exhausted_at = utcnow()
+    card.lifecycle.exhausted_reason = "split"
+    storage.save_card(card)
+    rprint(f"\n[dim]Original card exhausted:[/dim] {card.id[:8]}")
+    rprint(f"[bold]Split into {len(new_cards)} card(s).[/bold]")
+
+
+# ============================================================================
+# MERGE command
+# ============================================================================
+
+
+@app.command()
+def merge(
+    card_ids: list[str] = typer.Argument(..., help="Card IDs to merge (2 or more)"),
+) -> None:
+    """Merge multiple cards into one new card, exhausting all originals."""
+    storage = get_storage()
+
+    if len(card_ids) < 2:
+        rprint("[red]Must provide at least 2 card IDs to merge.[/red]")
+        raise typer.Exit(1)
+
+    # Resolve all cards
+    cards = []
+    for cid in card_ids:
+        card = _find_card(storage, cid)
+        if card is None:
+            rprint(f"[red]Card not found: {cid}[/red]")
+            raise typer.Exit(1)
+        if card.maturity == Maturity.EXHAUSTED:
+            rprint(f"[red]Cannot merge an exhausted card: {card.id[:8]}[/red]")
+            raise typer.Exit(1)
+        cards.append(card)
+
+    # Guard: all cards must be the same type
+    types = {c.type for c in cards}
+    if len(types) > 1:
+        rprint(
+            f"[red]Cannot merge cards of different types: {', '.join(t.value for t in types)}[/red]"
+        )
+        raise typer.Exit(1)
+
+    rprint("\n[bold]Merging cards:[/bold]")
+    for card in cards:
+        _display_card(card)
+        rprint("")
+
+    # Build combined editable
+    combined = _build_editable_from_card(cards[0])
+    combined["front"] = "\n---\n".join(c.front for c in cards)
+    combined["back"] = "\n---\n".join(c.back for c in cards)
+
+    # Union tags
+    all_tags: list[str] = []
+    for c in cards:
+        for t in c.tags:
+            if t not in all_tags:
+                all_tags.append(t)
+    combined["tags"] = all_tags
+
+    # Union taxonomy
+    all_taxonomy: list[str] = []
+    for c in cards:
+        for t in c.taxonomy:
+            if t not in all_taxonomy:
+                all_taxonomy.append(t)
+    combined["taxonomy"] = all_taxonomy
+
+    # Union list fields (type-specific)
+    for field in [
+        "patterns",
+        "data_structures",
+        "edge_cases",
+        "common_patterns",
+        "use_cases",
+        "anti_patterns",
+    ]:
+        if field in combined:
+            values: list[str] = []
+            for c in cards:
+                for v in getattr(c, field, []):
+                    if v not in values:
+                        values.append(v)
+            combined[field] = values
+
+    content = json.dumps(combined, indent=2)
+    edited_content = open_in_editor(content, suffix=".json")
+
+    if not edited_content.strip():
+        rprint("[yellow]Merge cancelled (empty content).[/yellow]")
+        return
+
+    try:
+        edited = json.loads(edited_content)
+    except json.JSONDecodeError as e:
+        rprint(f"[red]Invalid JSON: {e}[/red]")
+        raise typer.Exit(1)
+
+    new_card = _create_card_from_edited(edited)
+    new_card.lifecycle.merged_from = [c.id for c in cards]
+
+    # Save new card
+    new_path = storage.save_card(new_card)
+    rprint(f"\n[green]Merged card created:[/green] {new_card.id[:8]} ({new_path})")
+
+    # Exhaust all originals
+    for card in cards:
+        card.maturity = Maturity.EXHAUSTED
+        card.lifecycle.exhausted_at = utcnow()
+        card.lifecycle.exhausted_reason = "merged"
+        storage.save_card(card)
+        rprint(f"[dim]Original card exhausted:[/dim] {card.id[:8]}")
+
+    rprint(f"\n[bold]Merged {len(cards)} cards into 1.[/bold]")
 
 
 # ============================================================================
