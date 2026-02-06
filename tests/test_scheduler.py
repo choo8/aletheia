@@ -6,8 +6,9 @@ from pathlib import Path
 
 import pytest
 from aletheia.core.models import DSAProblemCard
-from aletheia.core.scheduler import AletheiaScheduler, ReviewRating, ReviewResult
+from aletheia.core.scheduler import AletheiaScheduler, CardState, ReviewRating, ReviewResult
 from aletheia.core.storage import AletheiaStorage
+from fsrs import State
 
 
 @pytest.fixture
@@ -45,6 +46,42 @@ class TestReviewRating:
         assert ReviewRating(3) == ReviewRating.GOOD
 
 
+class TestCardState:
+    """Tests for CardState StrEnum."""
+
+    def test_state_values(self):
+        """Test state enum string values."""
+        assert CardState.NEW == "new"
+        assert CardState.LEARNING == "learning"
+        assert CardState.REVIEW == "review"
+        assert CardState.RELEARNING == "relearning"
+
+    def test_state_is_str(self):
+        """Test that CardState values work as strings."""
+        # StrEnum values can be used directly as strings
+        assert f"State: {CardState.LEARNING}" == "State: learning"
+        assert CardState.REVIEW in ["review", "learning"]
+
+    def test_from_fsrs(self):
+        """Test conversion from FSRS State enum."""
+        assert CardState.from_fsrs(State.Learning) == CardState.LEARNING
+        assert CardState.from_fsrs(State.Review) == CardState.REVIEW
+        assert CardState.from_fsrs(State.Relearning) == CardState.RELEARNING
+
+    def test_to_fsrs(self):
+        """Test conversion to FSRS State enum."""
+        assert CardState.NEW.to_fsrs() == State.Learning
+        assert CardState.LEARNING.to_fsrs() == State.Learning
+        assert CardState.REVIEW.to_fsrs() == State.Review
+        assert CardState.RELEARNING.to_fsrs() == State.Relearning
+
+    def test_roundtrip(self):
+        """Test roundtrip conversion FSRS -> CardState -> FSRS."""
+        for fsrs_state in [State.Learning, State.Review, State.Relearning]:
+            card_state = CardState.from_fsrs(fsrs_state)
+            assert card_state.to_fsrs() == fsrs_state
+
+
 class TestAletheiaScheduler:
     """Tests for AletheiaScheduler."""
 
@@ -76,7 +113,7 @@ class TestAletheiaScheduler:
         assert isinstance(result, ReviewResult)
         assert result.card_id == card.id
         assert result.rating == ReviewRating.GOOD
-        assert result.state == "learning"
+        assert result.state == CardState.LEARNING
         assert result.stability > 0
         assert result.due_next > datetime.now(UTC)
 

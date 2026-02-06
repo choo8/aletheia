@@ -15,7 +15,7 @@ from aletheia.core.models import (
     SystemDesignCard,
     card_from_dict,
 )
-from aletheia.core.scheduler import AletheiaScheduler, ReviewRating, ReviewResult
+from aletheia.core.scheduler import AletheiaScheduler, CardState, ReviewRating, ReviewResult
 from aletheia.core.storage import AletheiaStorage, CardStorage, ReviewDatabase
 
 __all__ = [
@@ -39,6 +39,7 @@ __all__ = [
     "ReviewDatabase",
     # Scheduler
     "AletheiaScheduler",
+    "CardState",
     "ReviewRating",
     "ReviewResult",
 ]

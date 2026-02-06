@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from enum import IntEnum
+from enum import IntEnum, StrEnum
 
 from fsrs import Card as FSRSCard
 from fsrs import Rating, State
@@ -20,6 +20,40 @@ class ReviewRating(IntEnum):
     EASY = 4  # Remembered effortlessly
 
 
+class CardState(StrEnum):
+    """Card review state - a StrEnum wrapper around FSRS State.
+
+    Inherits from StrEnum so values can be used directly as strings
+    (e.g., in database storage) while providing type safety and
+    conversion methods to/from the FSRS State enum.
+    """
+
+    NEW = "new"
+    LEARNING = "learning"
+    REVIEW = "review"
+    RELEARNING = "relearning"
+
+    @classmethod
+    def from_fsrs(cls, state: State) -> "CardState":
+        """Convert from FSRS State enum."""
+        mapping = {
+            State.Learning: cls.LEARNING,
+            State.Review: cls.REVIEW,
+            State.Relearning: cls.RELEARNING,
+        }
+        return mapping.get(state, cls.LEARNING)
+
+    def to_fsrs(self) -> State:
+        """Convert to FSRS State enum."""
+        mapping = {
+            CardState.NEW: State.Learning,
+            CardState.LEARNING: State.Learning,
+            CardState.REVIEW: State.Review,
+            CardState.RELEARNING: State.Relearning,
+        }
+        return mapping.get(self, State.Learning)
+
+
 @dataclass
 class ReviewResult:
     """Result of reviewing a card."""
@@ -31,7 +65,7 @@ class ReviewResult:
     interval_days: float
     stability: float
     difficulty: float
-    state: str  # 'learning', 'review', 'relearning'
+    state: CardState
 
 
 class AletheiaScheduler:
@@ -97,7 +131,7 @@ class AletheiaScheduler:
             interval_days=interval_days,
             stability=reviewed_card.stability or 0.0,
             difficulty=reviewed_card.difficulty or 0.0,
-            state=self._state_name(reviewed_card.state),
+            state=CardState.from_fsrs(reviewed_card.state),
         )
 
     def get_card_state(self, card_id: str) -> dict | None:
@@ -106,7 +140,7 @@ class AletheiaScheduler:
 
     def _state_to_fsrs_card(self, state: dict | None) -> FSRSCard:
         """Convert DB state to FSRS Card object."""
-        if state is None or state.get("state") == "new":
+        if state is None or state.get("state") == CardState.NEW:
             return FSRSCard()  # New card with default values
 
         # Parse timestamps
@@ -122,8 +156,9 @@ class AletheiaScheduler:
             if last_review.tzinfo is None:
                 last_review = last_review.replace(tzinfo=UTC)
 
+        card_state = CardState(state.get("state", CardState.NEW))
         return FSRSCard(
-            state=State(self._state_value(state.get("state", "new"))),
+            state=card_state.to_fsrs(),
             stability=state.get("stability", 0.0),
             difficulty=state.get("difficulty", 0.0),
             due=due,
@@ -153,7 +188,7 @@ class AletheiaScheduler:
             last_review=fsrs_card.last_review,
             reps=reps,
             lapses=lapses,
-            state=self._state_name(fsrs_card.state),
+            state=CardState.from_fsrs(fsrs_card.state),
         )
 
     def _log_review(
@@ -191,27 +226,8 @@ class AletheiaScheduler:
             stability_after=fsrs_card.stability or 0.0,
             difficulty_before=(state_before.get("difficulty", 0.0) if state_before else 0.0),
             difficulty_after=fsrs_card.difficulty or 0.0,
-            state_before=state_before.get("state", "new") if state_before else "new",
-            state_after=self._state_name(fsrs_card.state),
+            state_before=state_before.get("state", CardState.NEW)
+            if state_before
+            else CardState.NEW,
+            state_after=CardState.from_fsrs(fsrs_card.state),
         )
-
-    @staticmethod
-    def _state_name(state: State) -> str:
-        """Convert FSRS State enum to string name."""
-        mapping = {
-            State.Learning: "learning",
-            State.Review: "review",
-            State.Relearning: "relearning",
-        }
-        return mapping.get(state, "learning")
-
-    @staticmethod
-    def _state_value(name: str) -> int:
-        """Convert state name to FSRS State value."""
-        mapping = {
-            "new": State.Learning.value,
-            "learning": State.Learning.value,
-            "review": State.Review.value,
-            "relearning": State.Relearning.value,
-        }
-        return mapping.get(name, State.Learning.value)
