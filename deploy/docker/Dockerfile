@@ -16,7 +16,7 @@ RUN uv sync --frozen --extra web
 FROM python:3.12-slim-bookworm AS runtime
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends git openssh-client && \
+    apt-get install -y --no-install-recommends git openssh-client gosu && \
     rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -37,7 +37,6 @@ RUN chmod +x /entrypoint.sh
 RUN mkdir -p /data && chown aletheia:aletheia /data
 VOLUME /data
 
-USER aletheia
 WORKDIR /data
 
 EXPOSE 8000

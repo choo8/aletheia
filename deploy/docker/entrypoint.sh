@@ -1,30 +1,34 @@
 #!/bin/bash
 set -e
 
-# --- SSH deploy key setup ---
+ALETHEIA_HOME=$(eval echo ~aletheia)
+
+# --- SSH deploy key setup (runs as root to read the bind mount) ---
 if [ -f /run/deploy_key ]; then
-    mkdir -p ~/.ssh
-    cp /run/deploy_key ~/.ssh/id_ed25519
-    chmod 600 ~/.ssh/id_ed25519
-    ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+    mkdir -p "$ALETHEIA_HOME/.ssh"
+    cp /run/deploy_key "$ALETHEIA_HOME/.ssh/id_ed25519"
+    chmod 600 "$ALETHEIA_HOME/.ssh/id_ed25519"
+    chown -R aletheia:aletheia "$ALETHEIA_HOME/.ssh"
+    ssh-keyscan -t ed25519 github.com >> "$ALETHEIA_HOME/.ssh/known_hosts" 2>/dev/null
     echo "SSH deploy key configured."
 fi
 
-# --- Clone or pull data repo ---
+# --- Clone or pull data repo (as aletheia user) ---
 if [ -n "$ALETHEIA_DATA_REPO" ] && [ ! -d /data/.git ]; then
     echo "Cloning data repo: $ALETHEIA_DATA_REPO"
-    git clone "$ALETHEIA_DATA_REPO" /data
+    gosu aletheia git clone "$ALETHEIA_DATA_REPO" /data
 elif [ -d /data/.git ]; then
     echo "Pulling latest data..."
-    cd /data && git pull --ff-only || echo "Warning: git pull failed (non-fatal)"
+    gosu aletheia bash -c "cd /data && git pull --ff-only" || echo "Warning: git pull failed (non-fatal)"
 fi
 
 # --- Ensure state directory exists ---
 mkdir -p "$ALETHEIA_STATE_DIR"
+chown aletheia:aletheia "$ALETHEIA_STATE_DIR"
 
 # --- Reindex FTS5 search ---
 echo "Reindexing search..."
-python -c "
+gosu aletheia python -c "
 from aletheia.core.storage import AletheiaStorage
 from pathlib import Path
 import os
@@ -38,9 +42,9 @@ print(f'Indexed {n} cards.')
 
 # --- Configure git identity for sync commits ---
 if [ -d /data/.git ]; then
-    cd /data
-    git config user.email "aletheia@container"
-    git config user.name "Aletheia"
+    gosu aletheia git -C /data config user.email "aletheia@container"
+    gosu aletheia git -C /data config user.name "Aletheia"
 fi
 
-exec "$@"
+# --- Drop to aletheia user for the main process ---
+exec gosu aletheia "$@"
