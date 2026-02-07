@@ -29,7 +29,7 @@ def init_data_repo(path: Path) -> Path:
     Creates the directory structure, .gitignore, and initial commit.
     Returns the resolved absolute path.
     """
-    path = path.resolve()
+    path = path.expanduser().resolve()
 
     if path.exists() and any(path.iterdir()):
         raise GitSyncError(f"Directory is not empty: {path}")
