@@ -5,12 +5,12 @@ Deploy Aletheia to a GCP e2-micro VM with private access via Tailscale.
 ## Architecture
 
 ```
-You (Tailscale) --> GCP e2-micro (Tailscale) --> Docker --> uvicorn:8000
+You (Tailscale) --> GCP e2-micro (Tailscale) --> Podman --> uvicorn:8000
 ```
 
 - No public web exposure; access is via Tailscale mesh VPN only
 - SSH is the only port open on the GCP firewall (for initial setup)
-- Data persists in a Docker named volume, backed by a git repo
+- Data persists in a Podman named volume, backed by a git repo
 
 ## Prerequisites
 
@@ -28,7 +28,7 @@ ssh-keygen -t ed25519 -f ~/.ssh/aletheia_deploy -N "" -C "aletheia-deploy"
 # aletheia-data repo settings on GitHub (read-only is fine for pulling)
 ```
 
-## 1. Local Testing with Docker
+## 1. Local Testing
 
 Test the container locally before deploying to GCP.
 
@@ -40,14 +40,14 @@ cp .env.example .env
 # Edit .env with your repo URL and deploy key path
 
 # Build and run
-docker compose up --build
+podman-compose up --build
 
 # Verify
 curl http://localhost:8000/health   # {"status": "ok"}
 # Open http://localhost:8000/review in browser
 ```
 
-To stop: `docker compose down` (data persists in the named volume).
+To stop: `podman-compose down` (data persists in the named volume).
 
 ## 2. Deploy to GCP
 
@@ -74,15 +74,9 @@ Note the output IP and SSH command.
 # SSH into the instance
 gcloud compute ssh aletheia --zone=us-central1-a
 
-# Wait for startup script to finish (Docker install)
+# Wait for startup script to finish (Podman install)
 sudo journalctl -u google-startup-scripts -f
 # Look for "Startup script complete."
-
-# Add your user to docker group
-sudo usermod -aG docker $USER
-# Log out and back in for group to take effect
-exit
-gcloud compute ssh aletheia --zone=us-central1-a
 ```
 
 ### Install Tailscale
@@ -112,7 +106,7 @@ EOF
 # gcloud compute scp ~/.ssh/aletheia_deploy aletheia:~/.ssh/aletheia_deploy --zone=us-central1-a
 
 # Start the app
-docker compose up -d --build
+podman-compose up -d --build
 
 # Verify
 curl http://localhost:8000/health
@@ -125,13 +119,13 @@ Access the app at `http://<tailscale-ip>:8000` from any device on your Tailscale
 ### View logs
 
 ```bash
-docker logs -f aletheia
+podman logs -f aletheia
 ```
 
 ### Sync reviews (commit + push to aletheia-data)
 
 ```bash
-docker exec aletheia aletheia sync
+podman exec aletheia aletheia sync
 ```
 
 ### Automated sync via cron
@@ -140,15 +134,15 @@ docker exec aletheia aletheia sync
 # On the VM, add to crontab:
 crontab -e
 # Sync every hour:
-0 * * * * docker exec aletheia aletheia sync >> /tmp/aletheia-sync.log 2>&1
+0 * * * * podman exec aletheia aletheia sync >> /tmp/aletheia-sync.log 2>&1
 ```
 
 ### Pull latest cards
 
 ```bash
-docker exec aletheia bash -c "cd /data && git pull --ff-only"
+podman exec aletheia bash -c "cd /data && git pull --ff-only"
 # Reindex after pulling new cards:
-docker exec aletheia python -c "
+podman exec aletheia python -c "
 from aletheia.core.storage import AletheiaStorage
 from pathlib import Path
 import os
@@ -162,21 +156,21 @@ print(f'Indexed {s.reindex_all()} cards.')
 ```bash
 cd ~/aletheia
 git pull
-docker compose -f deploy/docker/docker-compose.yml up -d --build
+podman-compose -f deploy/docker/docker-compose.yml up -d --build
 ```
 
 ### Rebuild from scratch
 
 ```bash
-docker compose -f deploy/docker/docker-compose.yml down
-docker compose -f deploy/docker/docker-compose.yml up -d --build
+podman-compose -f deploy/docker/docker-compose.yml down
+podman-compose -f deploy/docker/docker-compose.yml up -d --build
 # Data persists in the named volume; only the app container is rebuilt
 ```
 
 ### Destroy the volume (lose all data)
 
 ```bash
-docker compose -f deploy/docker/docker-compose.yml down -v
+podman-compose -f deploy/docker/docker-compose.yml down -v
 ```
 
 ## 4. Tear Down
@@ -186,5 +180,5 @@ cd deploy/terraform
 terraform destroy
 ```
 
-This removes the VM, static IP, and firewall rules. The Docker volume data is gone with the VM.
+This removes the VM, static IP, and firewall rules. The Podman volume data is gone with the VM.
 Your `aletheia-data` git repo remains safe on GitHub.
