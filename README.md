@@ -106,9 +106,68 @@ aletheia reformulate <card-id> -g       # LLM-guided reformulation
 aletheia split <card-id>                # Split into multiple cards
 aletheia merge <id1> <id2>              # Merge cards into one
 
+# Git sync (separate data repo)
+aletheia init ~/aletheia-data        # Create a data repository
+aletheia sync                        # Commit & push changes
+aletheia sync --pull                 # Pull latest + reindex
+
 # Start web server
 aletheia serve               # Start on port 8000
 aletheia serve --port 3000   # Custom port
+```
+
+## Data Repository Setup
+
+Aletheia separates the **tool** (this repo) from your **personal card data**. Card data lives in its own git repository so you can sync it across machines.
+
+### Local Workflow
+
+```bash
+# 1. Initialize a data repository
+aletheia init ~/aletheia-data
+
+# 2. Set environment variables (add to your shell profile)
+export ALETHEIA_DATA_DIR=~/aletheia-data
+export ALETHEIA_STATE_DIR=~/aletheia-data/.aletheia
+
+# 3. Use Aletheia normally — cards are stored in the data repo
+aletheia add dsa-problem
+aletheia review
+
+# 4. Commit and push changes
+aletheia sync
+```
+
+### Server Deployment
+
+To sync card data from a cloud VM (e.g., for running `aletheia serve`):
+
+```bash
+# On the server: generate an SSH deploy key
+ssh-keygen -t ed25519 -f ~/.ssh/aletheia_deploy -N ""
+
+# Add the public key as a deploy key (with write access) on your data repo
+cat ~/.ssh/aletheia_deploy.pub
+# → Go to GitHub repo → Settings → Deploy keys → Add deploy key
+
+# Configure SSH to use the deploy key
+cat >> ~/.ssh/config << 'EOF'
+Host github.com-aletheia
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/aletheia_deploy
+EOF
+
+# Clone the data repo
+git clone git@github.com-aletheia:youruser/aletheia-data.git ~/aletheia-data
+
+# Set environment variables
+export ALETHEIA_DATA_DIR=~/aletheia-data
+export ALETHEIA_STATE_DIR=~/aletheia-data/.aletheia
+
+# Pull latest cards and push reviews back
+aletheia sync --pull    # Pull new cards from laptop
+aletheia sync           # Push review progress back to GitHub
 ```
 
 ## Project Structure
@@ -154,11 +213,11 @@ uv run ruff check src/
 - [x] **Phase 1**: Core foundation (models, storage, CLI)
 - [x] **Phase 2**: Review system (FSRS, web UI, KaTeX)
 - [x] **Phase 3**: LLM integration (guided extraction, guided editing, quality feedback)
-- [ ] **Phase 4**: Polish (card lifecycle, stats, search)
+- [x] **Phase 4**: Polish (card lifecycle, stats, search)
   - [x] **Phase 4a**: Card lifecycle commands (suspend, resume, exhaust, reformulate, split, merge)
   - [x] **Phase 4b**: Search (SQLite FTS5 full-text search, web search UI, reindex)
   - [x] **Phase 4c**: Statistics dashboard (per-domain stats, streaks, review heatmap)
-  - [ ] **Phase 4d**: Polish (mobile responsive refinement, git sync helpers)
+  - [x] **Phase 4d**: Polish (mobile responsive, git sync helpers)
 
 ## License
 

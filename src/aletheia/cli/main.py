@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from aletheia.core.git_sync import GitSyncError, init_data_repo, pull_data_repo, sync_data_repo
 from aletheia.core.models import (
     AnyCard,
     CardType,
@@ -1486,6 +1487,55 @@ def merge(
         rprint(f"[dim]Original card exhausted:[/dim] {card.id[:8]}")
 
     rprint(f"\n[bold]Merged {len(cards)} cards into 1.[/bold]")
+
+
+# ============================================================================
+# INIT / SYNC commands
+# ============================================================================
+
+
+@app.command("init")
+def init_cmd(
+    path: str = typer.Argument(..., help="Path for the new data repository"),
+) -> None:
+    """Initialize a new Aletheia data repository."""
+    try:
+        resolved = init_data_repo(Path(path))
+    except GitSyncError as e:
+        rprint(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    rprint(f"[green]Data repository created at:[/green] {resolved}")
+    rprint("\nSet these environment variables to use it:")
+    rprint(f"  ALETHEIA_DATA_DIR={resolved}")
+    rprint(f"  ALETHEIA_STATE_DIR={resolved / '.aletheia'}")
+
+
+@app.command()
+def sync(
+    pull: bool = typer.Option(
+        False,
+        "--pull",
+        help="Pull latest changes from remote instead of pushing",
+    ),
+) -> None:
+    """Sync the data repository (commit & push, or pull)."""
+    data_dir = Path(os.environ.get("ALETHEIA_DATA_DIR", Path.cwd() / "data"))
+
+    try:
+        if pull:
+            result = pull_data_repo(data_dir)
+            rprint(f"[green]{result}[/green]")
+            # Rebuild search index after pulling new data
+            storage = get_storage()
+            count = storage.reindex_all()
+            rprint(f"[dim]Reindexed {count} card(s).[/dim]")
+        else:
+            result = sync_data_repo(data_dir)
+            rprint(f"[green]{result}[/green]")
+    except GitSyncError as e:
+        rprint(f"[red]{e}[/red]")
+        raise typer.Exit(1)
 
 
 # ============================================================================

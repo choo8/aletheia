@@ -8,25 +8,25 @@
 <!-- Summary cards -->
 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
     <div class="bg-white rounded-lg shadow p-4 text-center">
-        <div class="text-3xl font-bold text-gray-800">{{ stats.total_cards }}</div>
+        <div class="text-2xl sm:text-3xl font-bold text-gray-800">{{ stats.total_cards }}</div>
         <div class="text-sm text-gray-500">Total Cards</div>
     </div>
     <div class="bg-white rounded-lg shadow p-4 text-center">
-        <div class="text-3xl font-bold text-gray-800">{{ stats.total_reviews }}</div>
+        <div class="text-2xl sm:text-3xl font-bold text-gray-800">{{ stats.total_reviews }}</div>
         <div class="text-sm text-gray-500">Total Reviews</div>
     </div>
     <div class="bg-white rounded-lg shadow p-4 text-center">
-        <div class="text-3xl font-bold text-blue-600">{{ stats.due_today }}</div>
+        <div class="text-2xl sm:text-3xl font-bold text-blue-600">{{ stats.due_today }}</div>
         <div class="text-sm text-gray-500">Due Today</div>
     </div>
     <div class="bg-white rounded-lg shadow p-4 text-center">
-        <div class="text-3xl font-bold text-gray-800">{{ "%.0f"|format(stats.success_rate * 100) }}%</div>
+        <div class="text-2xl sm:text-3xl font-bold text-gray-800">{{ "%.0f"|format(stats.success_rate * 100) }}%</div>
         <div class="text-sm text-gray-500">Success Rate</div>
     </div>
 </div>
 
 <!-- Streaks -->
-<div class="bg-white rounded-lg shadow p-4 mb-8 flex gap-8">
+<div class="bg-white rounded-lg shadow p-4 mb-8 flex flex-col sm:flex-row gap-4 sm:gap-8">
     <div>
         <span class="text-sm text-gray-500">Current Streak</span>
         <span class="ml-2 text-lg font-bold text-gray-800">{{ stats.current_streak }} day{{ "s" if stats.current_streak != 1 }}</span>
