@@ -955,7 +955,7 @@ def search(
     rprint(f"\n[bold]Found {len(results)} card(s):[/bold]\n")
 
     for card in results:
-        _display_card(card)
+        _display_card(card, full=True)
         rprint("")
 
 
