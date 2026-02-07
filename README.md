@@ -157,7 +157,7 @@ uv run ruff check src/
 - [ ] **Phase 4**: Polish (card lifecycle, stats, search)
   - [x] **Phase 4a**: Card lifecycle commands (suspend, resume, exhaust, reformulate, split, merge)
   - [x] **Phase 4b**: Search (SQLite FTS5 full-text search, web search UI, reindex)
-  - [ ] **Phase 4c**: Statistics dashboard (per-domain stats, streaks, review heatmap)
+  - [x] **Phase 4c**: Statistics dashboard (per-domain stats, streaks, review heatmap)
   - [ ] **Phase 4d**: Polish (mobile responsive refinement, git sync helpers)
 
 ## License
