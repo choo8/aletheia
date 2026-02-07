@@ -2,9 +2,9 @@
 set -e
 
 # --- SSH deploy key setup ---
-if [ -f /run/secrets/deploy_key ]; then
+if [ -f /run/deploy_key ]; then
     mkdir -p ~/.ssh
-    cp /run/secrets/deploy_key ~/.ssh/id_ed25519
+    cp /run/deploy_key ~/.ssh/id_ed25519
     chmod 600 ~/.ssh/id_ed25519
     ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
     echo "SSH deploy key configured."

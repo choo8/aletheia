@@ -8,15 +8,10 @@ services:
       - "8000:8000"
     volumes:
       - aletheia-data:/data
+      - ${DEPLOY_KEY_PATH:-~/.ssh/aletheia_deploy}:/run/deploy_key:ro,z
     environment:
       - ALETHEIA_DATA_REPO=${ALETHEIA_DATA_REPO:-}
-    secrets:
-      - deploy_key
     restart: unless-stopped
-
-secrets:
-  deploy_key:
-    file: ${DEPLOY_KEY_PATH:-~/.ssh/aletheia_deploy}
 
 volumes:
   aletheia-data:
