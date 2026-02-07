@@ -928,10 +928,25 @@ def stats() -> None:
 @app.command()
 def search(
     query: str = typer.Argument(..., help="Search query"),
+    card_type: str | None = typer.Option(
+        None,
+        "--type",
+        "-t",
+        help="Filter results by card type (e.g. dsa-problem, dsa-concept, system-design)",
+    ),
 ) -> None:
     """Search cards by content."""
     storage = get_storage()
     results = storage.search(query)
+
+    # Filter by type if specified
+    if card_type:
+        try:
+            ct = CardType(card_type)
+        except ValueError:
+            rprint(f"[red]Invalid card type: {card_type}[/red]")
+            raise typer.Exit(1)
+        results = [c for c in results if c.type == ct]
 
     if not results:
         rprint(f"[dim]No cards found matching '{query}'[/dim]")
@@ -940,8 +955,16 @@ def search(
     rprint(f"\n[bold]Found {len(results)} card(s):[/bold]\n")
 
     for card in results:
-        _display_card(card)
+        _display_card(card, full=True)
         rprint("")
+
+
+@app.command()
+def reindex() -> None:
+    """Rebuild the search index from all cards on disk."""
+    storage = get_storage()
+    count = storage.reindex_all()
+    rprint(f"[green]Reindexed {count} card(s).[/green]")
 
 
 # ============================================================================
@@ -1497,6 +1520,7 @@ def serve(
     rprint("\n[bold]Starting Aletheia web server[/bold]")
     rprint(f"  URL: http://{host}:{port}")
     rprint(f"  Review: http://{host}:{port}/review")
+    rprint(f"  Search: http://{host}:{port}/search")
     rprint("\n[dim]Press Ctrl+C to stop[/dim]\n")
 
     uvicorn.run(

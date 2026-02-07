@@ -1,0 +1,35 @@
+{% if results %}
+<p class="text-sm text-gray-500 mb-3">Found {{ results|length }} card(s)</p>
+<div class="space-y-3">
+    {% for card in results %}
+    <div class="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+        <div class="flex items-center gap-2 mb-2">
+            <span class="inline-block px-2 py-0.5 text-xs font-medium rounded
+                {% if card.type.value == 'dsa-problem' %}bg-blue-100 text-blue-700
+                {% elif card.type.value == 'dsa-concept' %}bg-green-100 text-green-700
+                {% elif card.type.value == 'system-design' %}bg-purple-100 text-purple-700
+                {% else %}bg-gray-100 text-gray-700{% endif %}">
+                {{ card.type.value }}
+            </span>
+            <span class="inline-block px-2 py-0.5 text-xs rounded
+                {% if card.maturity.value == 'active' %}bg-emerald-100 text-emerald-700
+                {% elif card.maturity.value == 'suspended' %}bg-yellow-100 text-yellow-700
+                {% else %}bg-red-100 text-red-700{% endif %}">
+                {{ card.maturity.value }}
+            </span>
+        </div>
+        <p class="text-gray-800 font-medium">{{ card.front[:120] }}{% if card.front|length > 120 %}...{% endif %}</p>
+        {% if card.tags %}
+        <div class="mt-2 flex flex-wrap gap-1">
+            {% for tag in card.tags[:5] %}
+            <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{{ tag }}</span>
+            {% endfor %}
+        </div>
+        {% endif %}
+        <p class="text-xs text-gray-400 mt-2">{{ card.id[:8] }}</p>
+    </div>
+    {% endfor %}
+</div>
+{% elif query %}
+<p class="text-gray-500">No cards found matching "{{ query }}"</p>
+{% endif %}
