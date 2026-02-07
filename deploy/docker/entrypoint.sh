@@ -28,7 +28,7 @@ chown aletheia:aletheia "$ALETHEIA_STATE_DIR"
 
 # --- Reindex FTS5 search ---
 echo "Reindexing search..."
-gosu aletheia python -c "
+gosu aletheia /app/.venv/bin/python -c "
 from aletheia.core.storage import AletheiaStorage
 from pathlib import Path
 import os
