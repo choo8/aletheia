@@ -4,6 +4,9 @@
 # Local Aletheia state (will be created during development)
 .aletheia/
 
+# Local card data (use 'aletheia init' for a separate data repo)
+data/
+
 # Python
 __pycache__/
 *.py[cod]

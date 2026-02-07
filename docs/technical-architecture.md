@@ -802,9 +802,11 @@ aletheia sync --pull               # Git pull
 - [x] Statistics dashboard web page with summary cards, streaks, by-type/domain tables
 - [x] Comprehensive test coverage (16 tests)
 
-### Phase 4d: Polish
-- [ ] Mobile responsive refinement
-- [ ] Git sync helper commands (`aletheia sync`)
+### Phase 4d: Polish ✓
+- [x] Mobile responsive refinement (rating grid, card text, nav, stats)
+- [x] Git sync helper commands (`aletheia init`, `aletheia sync`, `aletheia sync --pull`)
+- [x] Separate data repo pattern (app code vs. card data in its own git repo)
+- [x] Comprehensive test coverage (23 tests)
 
 ---
 
