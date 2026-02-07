@@ -5,9 +5,11 @@ Deploy Aletheia to a GCP e2-micro VM with private access via Tailscale.
 ## Architecture
 
 ```
-You (Tailscale) --> GCP e2-micro (Tailscale) --> Podman --> uvicorn:8000
+GitHub Actions (build) --> GHCR (image registry)
+You (Tailscale) --------> GCP e2-micro (Tailscale) --> Podman --> uvicorn:8000
 ```
 
+- Container image built via GitHub Actions, pulled from GHCR on the VM
 - No public web exposure; access is via Tailscale mesh VPN only
 - SSH is the only port open on the GCP firewall (for initial setup)
 - Data persists in a Podman named volume, backed by a git repo
@@ -25,7 +27,7 @@ You (Tailscale) --> GCP e2-micro (Tailscale) --> Podman --> uvicorn:8000
 ```bash
 ssh-keygen -t ed25519 -f ~/.ssh/aletheia_deploy -N "" -C "aletheia-deploy"
 # Add the public key (~/.ssh/aletheia_deploy.pub) as a deploy key in your
-# aletheia-data repo settings on GitHub (read-only is fine for pulling)
+# aletheia-data repo settings on GitHub (read-write access for sync)
 ```
 
 ## 1. Local Testing
@@ -37,10 +39,16 @@ cd deploy/docker
 
 # Create .env from example
 cp .env.example .env
-# Edit .env with your repo URL and deploy key path
+# Edit .env with your repo URL
 
-# Build and run
-podman-compose up --build
+# Register your deploy key as a podman secret
+podman secret create deploy_key ~/.ssh/aletheia_deploy
+
+# Build locally (CI builds from GHCR are used in production)
+podman build -t aletheia -f Dockerfile ../..
+
+# Run
+podman-compose up
 
 # Verify
 curl http://localhost:8000/health   # {"status": "ok"}
@@ -76,7 +84,7 @@ gcloud compute ssh aletheia --zone=us-central1-a
 
 # Wait for startup script to finish (Podman install)
 sudo journalctl -u google-startup-scripts -f
-# Look for "Startup script complete."
+# Look for "Startup script complete." then Ctrl+C
 ```
 
 ### Install Tailscale
@@ -84,7 +92,7 @@ sudo journalctl -u google-startup-scripts -f
 ```bash
 # On the VM:
 curl -fsSL https://tailscale.com/install.sh | sh
-sudo tailscale up --authkey=tskey-auth-XXXXX  # One-time auth key from Tailscale admin
+sudo tailscale up   # Opens a URL — authenticate in your browser
 ```
 
 After this, the VM is accessible via its Tailscale IP (e.g., `100.x.y.z`).
@@ -92,21 +100,27 @@ After this, the VM is accessible via its Tailscale IP (e.g., `100.x.y.z`).
 ### Deploy the app
 
 ```bash
-# On the VM:
-git clone https://github.com/youruser/aletheia.git ~/aletheia
+# Copy your deploy key to the VM (from your local machine):
+gcloud compute scp ~/.ssh/aletheia_deploy aletheia:~/.ssh/aletheia_deploy --zone=us-central1-a
+
+# SSH into the VM:
+gcloud compute ssh aletheia --zone=us-central1-a
+
+# Register the deploy key as a podman secret
+podman secret create deploy_key ~/.ssh/aletheia_deploy
+
+# Clone the app repo
+git clone https://github.com/choo8/aletheia.git ~/aletheia
 cd ~/aletheia/deploy/docker
 
 # Create .env
 cat > .env << 'EOF'
 ALETHEIA_DATA_REPO=git@github.com:youruser/aletheia-data.git
-DEPLOY_KEY_PATH=/home/youruser/.ssh/aletheia_deploy
 EOF
 
-# Copy your deploy key to the VM (from your local machine):
-# gcloud compute scp ~/.ssh/aletheia_deploy aletheia:~/.ssh/aletheia_deploy --zone=us-central1-a
-
-# Start the app
-podman-compose up -d --build
+# Pull and start the app
+podman-compose pull
+podman-compose up -d
 
 # Verify
 curl http://localhost:8000/health
@@ -151,26 +165,18 @@ print(f'Indexed {s.reindex_all()} cards.')
 "
 ```
 
-### Update app code
+### Update app (pull new image from GHCR)
 
 ```bash
-cd ~/aletheia
-git pull
-podman-compose -f deploy/docker/docker-compose.yml up -d --build
-```
-
-### Rebuild from scratch
-
-```bash
-podman-compose -f deploy/docker/docker-compose.yml down
-podman-compose -f deploy/docker/docker-compose.yml up -d --build
-# Data persists in the named volume; only the app container is rebuilt
+cd ~/aletheia/deploy/docker
+podman-compose pull
+podman-compose up -d
 ```
 
 ### Destroy the volume (lose all data)
 
 ```bash
-podman-compose -f deploy/docker/docker-compose.yml down -v
+podman-compose -f ~/aletheia/deploy/docker/docker-compose.yml down -v
 ```
 
 ## 4. Tear Down
