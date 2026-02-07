@@ -1,17 +1,20 @@
 services:
   aletheia:
-    build:
-      context: ../..
-      dockerfile: deploy/docker/Dockerfile
+    image: ghcr.io/choo8/aletheia:latest
     container_name: aletheia
     ports:
       - "8000:8000"
     volumes:
       - aletheia-data:/data
-      - ${DEPLOY_KEY_PATH:-~/.ssh/aletheia_deploy}:/run/deploy_key:ro,z
     environment:
       - ALETHEIA_DATA_REPO=${ALETHEIA_DATA_REPO:-}
+    secrets:
+      - deploy_key
     restart: unless-stopped
+
+secrets:
+  deploy_key:
+    external: true
 
 volumes:
   aletheia-data:

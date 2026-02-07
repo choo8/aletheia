@@ -3,10 +3,10 @@ set -e
 
 ALETHEIA_HOME=$(eval echo ~aletheia)
 
-# --- SSH deploy key setup (runs as root to read the bind mount) ---
-if [ -f /run/deploy_key ]; then
+# --- SSH deploy key setup (via podman secret) ---
+if [ -f /run/secrets/deploy_key ]; then
     mkdir -p "$ALETHEIA_HOME/.ssh"
-    cp /run/deploy_key "$ALETHEIA_HOME/.ssh/id_ed25519"
+    cp /run/secrets/deploy_key "$ALETHEIA_HOME/.ssh/id_ed25519"
     chmod 600 "$ALETHEIA_HOME/.ssh/id_ed25519"
     chown -R aletheia:aletheia "$ALETHEIA_HOME/.ssh"
     ssh-keyscan -t ed25519 github.com >> "$ALETHEIA_HOME/.ssh/known_hosts" 2>/dev/null
