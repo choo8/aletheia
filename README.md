@@ -57,7 +57,7 @@ GEMINI_API_KEY=...                                 # Or ANTHROPIC_API_KEY, OPENA
 ## Quick Start
 
 ```bash
-# Add a new DSA problem card
+# Add a new DSA problem card (type 'e' at any prompt to open $EDITOR for multi-line input)
 aletheia add dsa-problem
 aletheia add dsa-problem --guided   # LLM-guided Socratic extraction
 

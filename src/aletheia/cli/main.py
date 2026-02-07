@@ -54,6 +54,24 @@ def get_storage() -> AletheiaStorage:
     return _storage
 
 
+def prompt_or_editor(label: str, default: str = "", required: bool = True) -> str:
+    """Prompt for input, opening $EDITOR if the user types 'e'.
+
+    For multi-line fields (front, back, intuition, etc.), the user can either
+    type a single-line value directly or type 'e' to open their editor.
+    """
+    hint = " ('e' for editor)" if required else " ('e' for editor, empty to skip)"
+    value = typer.prompt(f"{label}{hint}", default=default)
+
+    if value.strip().lower() == "e":
+        value = open_in_editor("", suffix=".txt").strip()
+        if not value and required:
+            rprint("[red]Editor returned empty content.[/red]")
+            raise typer.Exit(1)
+
+    return value
+
+
 def open_in_editor(content: str, suffix: str = ".yaml") -> str:
     """Open content in the user's editor and return the edited content."""
     editor = os.environ.get("EDITOR", os.environ.get("VISUAL", "vim"))
@@ -139,10 +157,10 @@ def _add_dsa_problem(quick: bool) -> DSAProblemCard | None:
 
     # Get card content
     rprint("\n[dim]Enter the main question for this card:[/dim]")
-    front = typer.prompt("Front (question)")
+    front = prompt_or_editor("Front (question)")
 
     rprint("\n[dim]Enter the answer/explanation:[/dim]")
-    back = typer.prompt("Back (answer)")
+    back = prompt_or_editor("Back (answer)")
 
     # Patterns and data structures
     patterns_str = typer.prompt(
@@ -170,7 +188,7 @@ def _add_dsa_problem(quick: bool) -> DSAProblemCard | None:
 
     if not quick:
         rprint("\n[dim]Optional: Add intuition and edge cases[/dim]")
-        intuition = typer.prompt("Key intuition (why does this approach work?)", default="")
+        intuition = prompt_or_editor("Key intuition (why does this approach work?)", required=False)
         edge_cases_str = typer.prompt("Edge cases (comma-separated)", default="")
         edge_cases = [e.strip() for e in edge_cases_str.split(",") if e.strip()]
 
@@ -208,11 +226,11 @@ def _add_dsa_concept(quick: bool) -> DSAConceptCard | None:
     rprint("\n[bold]Adding DSA Concept Card[/bold]\n")
 
     name = typer.prompt("Concept name (e.g., Monotonic Stack)")
-    front = typer.prompt("Front (question)")
-    back = typer.prompt("Back (answer)")
+    front = prompt_or_editor("Front (question)")
+    back = prompt_or_editor("Back (answer)")
 
-    definition = typer.prompt("Definition (optional)", default="")
-    intuition = typer.prompt("Intuition - when/why to use (optional)", default="")
+    definition = prompt_or_editor("Definition (optional)", required=False)
+    intuition = prompt_or_editor("Intuition - when/why to use (optional)", required=False)
 
     patterns_str = typer.prompt("Common patterns (comma-separated)", default="")
     common_patterns = [p.strip() for p in patterns_str.split(",") if p.strip()]
@@ -220,8 +238,8 @@ def _add_dsa_concept(quick: bool) -> DSAConceptCard | None:
     when_to_use = ""
     when_not_to_use = ""
     if not quick:
-        when_to_use = typer.prompt("When to use (signals)", default="")
-        when_not_to_use = typer.prompt("When NOT to use", default="")
+        when_to_use = prompt_or_editor("When to use (signals)", required=False)
+        when_not_to_use = prompt_or_editor("When NOT to use", required=False)
 
     tags_str = typer.prompt("Tags (comma-separated)", default="")
     tags = [t.strip() for t in tags_str.split(",") if t.strip()]
@@ -255,13 +273,13 @@ def _add_system_design(quick: bool) -> SystemDesignCard | None:
     rprint("\n[bold]Adding System Design Card[/bold]\n")
 
     name = typer.prompt("Concept name (e.g., Leader-Follower Replication)")
-    front = typer.prompt("Front (question)")
-    back = typer.prompt("Back (answer)")
+    front = prompt_or_editor("Front (question)")
+    back = prompt_or_editor("Back (answer)")
 
-    definition = typer.prompt("Definition (optional)", default="")
+    definition = prompt_or_editor("Definition (optional)", required=False)
     how_it_works = ""
     if not quick:
-        how_it_works = typer.prompt("How it works (optional)", default="")
+        how_it_works = prompt_or_editor("How it works (optional)", required=False)
 
     use_cases_str = typer.prompt("Use cases (comma-separated)", default="")
     use_cases = [u.strip() for u in use_cases_str.split(",") if u.strip()]
@@ -304,7 +322,7 @@ def _add_guided(card_type: str) -> DSAProblemCard | DSAConceptCard | SystemDesig
 
     # Get initial context from user
     rprint("Describe what you learned (problem solved, concept understood, etc.):")
-    context = typer.prompt("Context")
+    context = prompt_or_editor("Context")
 
     if not context.strip():
         rprint("[red]Context cannot be empty.[/red]")
@@ -807,7 +825,7 @@ def _edit_guided(card, storage: AletheiaStorage) -> None:
 
     # Get new context from user
     rprint("\nDescribe what changed in your understanding:")
-    new_context = typer.prompt("New context")
+    new_context = prompt_or_editor("New context")
 
     if not new_context.strip():
         rprint("[red]Context cannot be empty.[/red]")
