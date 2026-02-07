@@ -55,3 +55,8 @@ htmlcov/
 *.env
 .env.*
 !.env.example
+!deploy/docker/.env.example
+
+# Deploy secrets
+deploy/docker/.env
+**/deploy_key*
