@@ -1,21 +1,6 @@
-# Stage 1: Build dependencies with uv
-FROM python:3.12-slim-bookworm AS builder
+FROM python:3.12-slim-bookworm
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
-
-WORKDIR /app
-
-# Install dependencies first (cached layer)
-COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --extra web --no-install-project
-
-# Copy source and install project
-COPY README.md ./
-COPY src/ src/
-RUN uv sync --frozen --extra web
-
-# Stage 2: Slim runtime
-FROM python:3.12-slim-bookworm AS runtime
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends git openssh-client gosu && \
@@ -24,8 +9,16 @@ RUN apt-get update && \
 # Create non-root user
 RUN useradd --create-home --shell /bin/bash aletheia
 
-# Copy virtual environment from builder
-COPY --from=builder /app/.venv /app/.venv
+# Install dependencies first (cached layer)
+WORKDIR /app
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --extra web --no-install-project
+
+# Copy source and install project
+COPY README.md ./
+COPY src/ src/
+RUN uv sync --frozen --extra web --no-editable
+
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     ALETHEIA_DATA_DIR=/data \
