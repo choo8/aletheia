@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from aletheia.web.routes import review_router, search_router
+from aletheia.web.routes import review_router, search_router, stats_router
 
 
 def create_app() -> FastAPI:
@@ -28,6 +28,7 @@ def create_app() -> FastAPI:
     # Routes
     app.include_router(review_router, prefix="/review", tags=["review"])
     app.include_router(search_router, prefix="/search", tags=["search"])
+    app.include_router(stats_router, prefix="/stats", tags=["stats"])
 
     @app.get("/")
     async def home():

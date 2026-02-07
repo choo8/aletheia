@@ -894,28 +894,33 @@ def _edit_guided(card, storage: AletheiaStorage) -> None:
 def stats() -> None:
     """Show review statistics."""
     storage = get_storage()
-    db_stats = storage.db.get_stats()
+    full = storage.get_full_stats()
 
     table = Table(title="Aletheia Statistics")
     table.add_column("Metric", style="cyan")
     table.add_column("Value", justify="right")
 
-    table.add_row("Total Cards", str(db_stats["total_cards"]))
-    table.add_row("Total Reviews", str(db_stats["total_reviews"]))
-    table.add_row("Due Today", str(db_stats["due_today"]))
-    table.add_row("New Cards", str(db_stats["new_cards"]))
+    table.add_row("Total Cards", str(full["total_cards"]))
+    table.add_row("Total Reviews", str(full["total_reviews"]))
+    table.add_row("Due Today", str(full["due_today"]))
+    table.add_row("New Cards", str(full["new_cards"]))
+    table.add_row("Success Rate", f"{full['success_rate']:.0%}")
+    table.add_row("Current Streak", f"{full['current_streak']} day(s)")
+    table.add_row("Longest Streak", f"{full['longest_streak']} day(s)")
 
-    # Count by type
-    cards = storage.list_cards()
-    by_type: dict[str, int] = {}
-    for card in cards:
-        by_type[card.type.value] = by_type.get(card.type.value, 0) + 1
-
+    by_type = full.get("by_type", {})
     if by_type:
         table.add_row("", "")
         table.add_row("[bold]By Type[/bold]", "")
         for card_type, count in sorted(by_type.items()):
             table.add_row(f"  {card_type}", str(count))
+
+    by_domain = full.get("by_domain", {})
+    if by_domain:
+        table.add_row("", "")
+        table.add_row("[bold]By Domain[/bold]", "")
+        for domain, count in sorted(by_domain.items()):
+            table.add_row(f"  {domain}", str(count))
 
     console.print(table)
 
@@ -1521,6 +1526,7 @@ def serve(
     rprint(f"  URL: http://{host}:{port}")
     rprint(f"  Review: http://{host}:{port}/review")
     rprint(f"  Search: http://{host}:{port}/search")
+    rprint(f"  Stats: http://{host}:{port}/stats")
     rprint("\n[dim]Press Ctrl+C to stop[/dim]\n")
 
     uvicorn.run(

@@ -796,9 +796,11 @@ aletheia sync --pull               # Git pull
 - [x] FTS5 schema migration (auto-detect and rebuild on column changes)
 - [x] Comprehensive test coverage (35 tests)
 
-### Phase 4c: Statistics Dashboard
-- [ ] Richer CLI stats (per-domain, streaks)
-- [ ] Review heatmap in web UI
+### Phase 4c: Statistics Dashboard ✓
+- [x] Richer CLI stats (per-domain, streaks, success rate)
+- [x] Review heatmap in web UI (CSS-only GitHub-style contribution graph)
+- [x] Statistics dashboard web page with summary cards, streaks, by-type/domain tables
+- [x] Comprehensive test coverage (16 tests)
 
 ### Phase 4d: Polish
 - [ ] Mobile responsive refinement

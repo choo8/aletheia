@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}Stats - Aletheia{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold text-gray-800 mb-6">Statistics</h1>
+
+<!-- Summary cards -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+    <div class="bg-white rounded-lg shadow p-4 text-center">
+        <div class="text-3xl font-bold text-gray-800">{{ stats.total_cards }}</div>
+        <div class="text-sm text-gray-500">Total Cards</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-4 text-center">
+        <div class="text-3xl font-bold text-gray-800">{{ stats.total_reviews }}</div>
+        <div class="text-sm text-gray-500">Total Reviews</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-4 text-center">
+        <div class="text-3xl font-bold text-blue-600">{{ stats.due_today }}</div>
+        <div class="text-sm text-gray-500">Due Today</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-4 text-center">
+        <div class="text-3xl font-bold text-gray-800">{{ "%.0f"|format(stats.success_rate * 100) }}%</div>
+        <div class="text-sm text-gray-500">Success Rate</div>
+    </div>
+</div>
+
+<!-- Streaks -->
+<div class="bg-white rounded-lg shadow p-4 mb-8 flex gap-8">
+    <div>
+        <span class="text-sm text-gray-500">Current Streak</span>
+        <span class="ml-2 text-lg font-bold text-gray-800">{{ stats.current_streak }} day{{ "s" if stats.current_streak != 1 }}</span>
+    </div>
+    <div>
+        <span class="text-sm text-gray-500">Longest Streak</span>
+        <span class="ml-2 text-lg font-bold text-gray-800">{{ stats.longest_streak }} day{{ "s" if stats.longest_streak != 1 }}</span>
+    </div>
+</div>
+
+<!-- Review heatmap -->
+<div class="bg-white rounded-lg shadow p-4 mb-8">
+    <h2 class="text-lg font-semibold text-gray-700 mb-3">Review Activity</h2>
+    <div class="overflow-x-auto">
+        <div style="display: grid; grid-template-rows: repeat(7, 1fr); grid-auto-flow: column; gap: 2px;">
+            {% for day in heatmap_days %}
+            <div
+                class="w-3 h-3 rounded-sm {% if day.level == 0 %}bg-gray-100{% elif day.level == 1 %}bg-green-200{% elif day.level == 2 %}bg-green-400{% else %}bg-green-600{% endif %}"
+                title="{{ day.date }}: {{ day.count }} review{{ 's' if day.count != 1 }}">
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="flex items-center gap-1 mt-2 text-xs text-gray-500">
+        <span>Less</span>
+        <div class="w-3 h-3 rounded-sm bg-gray-100"></div>
+        <div class="w-3 h-3 rounded-sm bg-green-200"></div>
+        <div class="w-3 h-3 rounded-sm bg-green-400"></div>
+        <div class="w-3 h-3 rounded-sm bg-green-600"></div>
+        <span>More</span>
+    </div>
+</div>
+
+<!-- By Type / By Domain -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    {% if stats.by_type %}
+    <div class="bg-white rounded-lg shadow p-4">
+        <h2 class="text-lg font-semibold text-gray-700 mb-3">By Type</h2>
+        <table class="w-full text-sm">
+            <tbody>
+                {% for type_name, count in stats.by_type|dictsort %}
+                <tr class="border-b border-gray-100">
+                    <td class="py-1 text-gray-600">{{ type_name }}</td>
+                    <td class="py-1 text-right font-medium">{{ count }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    {% if stats.by_domain %}
+    <div class="bg-white rounded-lg shadow p-4">
+        <h2 class="text-lg font-semibold text-gray-700 mb-3">By Domain</h2>
+        <table class="w-full text-sm">
+            <tbody>
+                {% for domain, count in stats.by_domain|dictsort %}
+                <tr class="border-b border-gray-100">
+                    <td class="py-1 text-gray-600">{{ domain }}</td>
+                    <td class="py-1 text-right font-medium">{{ count }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

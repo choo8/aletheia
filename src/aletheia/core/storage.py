@@ -5,7 +5,7 @@ import re
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from aletheia.core.models import AnyCard, CardType, card_from_dict
@@ -455,6 +455,77 @@ class ReviewDatabase:
             # Malformed FTS5 query — return empty rather than crash
             return []
 
+    def get_review_heatmap(self, days: int = 365) -> dict[str, int]:
+        """Get review counts per day for the heatmap.
+
+        Returns a dict mapping ISO date strings to review counts.
+        """
+        with self._connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT date(reviewed_at) as review_date, COUNT(*) as cnt
+                FROM review_logs
+                WHERE reviewed_at >= date('now', ?)
+                GROUP BY date(reviewed_at)
+                """,
+                (f"-{days} days",),
+            ).fetchall()
+            return {row["review_date"]: row["cnt"] for row in rows}
+
+    def get_streak_info(self) -> dict[str, int]:
+        """Compute current and longest review streaks.
+
+        Current streak counts consecutive days ending today or yesterday
+        (so the streak doesn't break mid-day before a review).
+        """
+        heatmap = self.get_review_heatmap(days=3650)
+        if not heatmap:
+            return {"current_streak": 0, "longest_streak": 0}
+
+        review_dates = sorted(date.fromisoformat(d) for d in heatmap)
+        today = date.today()
+
+        # Current streak: walk backwards from today (or yesterday)
+        current_streak = 0
+        check = today
+        if check not in review_dates and (check - timedelta(days=1)) in review_dates:
+            check = check - timedelta(days=1)
+        review_set = set(review_dates)
+        while check in review_set:
+            current_streak += 1
+            check -= timedelta(days=1)
+
+        # Longest streak: iterate sorted dates
+        longest_streak = 1
+        streak = 1
+        for i in range(1, len(review_dates)):
+            if review_dates[i] - review_dates[i - 1] == timedelta(days=1):
+                streak += 1
+                longest_streak = max(longest_streak, streak)
+            else:
+                streak = 1
+
+        return {"current_streak": current_streak, "longest_streak": longest_streak}
+
+    def get_success_rate(self) -> float:
+        """Get the fraction of reviews rated Good (3) or Easy (4).
+
+        Returns 0.0 if there are no reviews.
+        """
+        with self._connection() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    COUNT(*) as total,
+                    SUM(CASE WHEN rating >= 3 THEN 1 ELSE 0 END) as good
+                FROM review_logs
+                """
+            ).fetchone()
+            total = row["total"]
+            if total == 0:
+                return 0.0
+            return row["good"] / total
+
     def get_stats(self) -> dict:
         """Get review statistics."""
         with self._connection() as conn:
@@ -544,6 +615,30 @@ class AletheiaStorage:
 
         # Fall back to simple search
         return self.cards.search(query)
+
+    def get_full_stats(self) -> dict:
+        """Get comprehensive statistics including per-type and per-domain breakdowns.
+
+        Combines DB stats (reviews, heatmap, streaks, success rate) with
+        card metadata from JSON files (type and domain breakdowns).
+        """
+        stats = self.db.get_stats()
+        stats["success_rate"] = self.db.get_success_rate()
+        stats["heatmap"] = self.db.get_review_heatmap()
+        stats.update(self.db.get_streak_info())
+
+        # Load all cards for type/domain breakdown
+        cards = self.list_cards()
+        by_type: dict[str, int] = {}
+        by_domain: dict[str, int] = {}
+        for card in cards:
+            by_type[card.type.value] = by_type.get(card.type.value, 0) + 1
+            domain = card.taxonomy[0] if card.taxonomy else "uncategorized"
+            by_domain[domain] = by_domain.get(domain, 0) + 1
+
+        stats["by_type"] = by_type
+        stats["by_domain"] = by_domain
+        return stats
 
     def reindex_all(self) -> int:
         """Rebuild the search index from all cards on disk.
