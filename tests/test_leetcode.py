@@ -2,6 +2,7 @@
 
 from http.cookiejar import Cookie
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,6 +13,12 @@ from aletheia.leetcode.auth import (
     extract_browser_cookies,
     get_credentials,
     save_credentials,
+)
+from aletheia.leetcode.service import (
+    LeetCodeError,
+    LeetCodeService,
+    resolve_code_solution,
+    resolve_language,
 )
 
 
@@ -200,3 +207,303 @@ class TestBrowserExtraction:
         with patch.dict("sys.modules", {"rookiepy": mock_rookiepy}):
             with pytest.raises(LeetCodeAuthError, match="Failed to extract"):
                 extract_browser_cookies()
+
+
+# ============================================================================
+# Service tests
+# ============================================================================
+
+
+def _make_creds():
+    """Create test credentials."""
+    return LeetCodeCredentials(
+        csrftoken="csrf", leetcode_session="session", username="user", stored_at="now"
+    )
+
+
+def _make_service():
+    """Create a LeetCodeService with a mocked API."""
+    service = LeetCodeService(_make_creds())
+    service._api = MagicMock()
+    return service
+
+
+class TestLeetCodeService:
+    """Tests for LeetCodeService."""
+
+    def test_whoami_success(self):
+        """Test successful whoami returns username."""
+        service = _make_service()
+        service._api.graphql_post.return_value = SimpleNamespace(
+            data=SimpleNamespace(user=SimpleNamespace(username="leetcoder"))
+        )
+        assert service.whoami() == "leetcoder"
+
+    def test_whoami_expired_session(self):
+        """Test whoami with expired session raises."""
+        service = _make_service()
+        service._api.graphql_post.return_value = SimpleNamespace(data=SimpleNamespace(user=None))
+        with pytest.raises(LeetCodeError, match="expired or invalid"):
+            service.whoami()
+
+    def test_whoami_api_failure(self):
+        """Test whoami propagates API errors."""
+        service = _make_service()
+        service._api.graphql_post.side_effect = RuntimeError("network error")
+        with pytest.raises(LeetCodeError, match="Failed to verify"):
+            service.whoami()
+
+    def test_resolve_question_id_success(self):
+        """Test resolving frontend ID to internal question ID."""
+        service = _make_service()
+        service._api.graphql_post.return_value = SimpleNamespace(
+            data=SimpleNamespace(
+                problemset_question_list=SimpleNamespace(
+                    questions=[
+                        SimpleNamespace(
+                            frontend_question_id="42",
+                            question_id="317",
+                            title_slug="trapping-rain-water",
+                        )
+                    ]
+                )
+            )
+        )
+        assert service.resolve_question_id("42") == "317"
+
+    def test_resolve_question_id_not_found(self):
+        """Test resolving non-existent problem."""
+        service = _make_service()
+        service._api.graphql_post.return_value = SimpleNamespace(
+            data=SimpleNamespace(problemset_question_list=SimpleNamespace(questions=[]))
+        )
+        with pytest.raises(LeetCodeError, match="not found"):
+            service.resolve_question_id("99999")
+
+    def test_test_solution_pass(self):
+        """Test running a solution that passes all test cases."""
+        service = _make_service()
+        service._api.problems_problem_interpret_solution_post.return_value = SimpleNamespace(
+            interpret_id="interp-123"
+        )
+        service._api.submissions_detail_id_check_get.return_value = SimpleNamespace(
+            state="SUCCESS",
+            run_success=True,
+            total_testcases=3,
+            total_correct=3,
+            expected_code_answer=["[1,2]"],
+            code_answer=["[1,2]"],
+            runtime_error=None,
+            compile_error=None,
+        )
+
+        result = service.test_solution("two-sum", "1", "code", "python3")
+        assert result.passed is True
+        assert result.total_cases == 3
+        assert result.passed_cases == 3
+
+    def test_test_solution_fail(self):
+        """Test running a solution that fails test cases."""
+        service = _make_service()
+        service._api.problems_problem_interpret_solution_post.return_value = SimpleNamespace(
+            interpret_id="interp-456"
+        )
+        service._api.submissions_detail_id_check_get.return_value = SimpleNamespace(
+            state="SUCCESS",
+            run_success=True,
+            total_testcases=3,
+            total_correct=1,
+            expected_code_answer=["[1,2]"],
+            code_answer=["[2,3]"],
+            runtime_error=None,
+            compile_error=None,
+        )
+
+        result = service.test_solution("two-sum", "1", "code", "python3")
+        assert result.passed is False
+        assert result.passed_cases == 1
+
+    def test_test_solution_runtime_error(self):
+        """Test running a solution with a runtime error."""
+        service = _make_service()
+        service._api.problems_problem_interpret_solution_post.return_value = SimpleNamespace(
+            interpret_id="interp-789"
+        )
+        service._api.submissions_detail_id_check_get.return_value = SimpleNamespace(
+            state="SUCCESS",
+            run_success=False,
+            total_testcases=0,
+            total_correct=0,
+            expected_code_answer=None,
+            code_answer=None,
+            runtime_error="IndexError: list index out of range",
+            compile_error=None,
+        )
+
+        result = service.test_solution("two-sum", "1", "code", "python3")
+        assert result.passed is False
+        assert result.runtime_error is not None
+
+    def test_submit_accepted(self):
+        """Test submitting a solution that gets accepted."""
+        service = _make_service()
+        service._api.problems_problem_submit_post.return_value = SimpleNamespace(
+            submission_id=12345
+        )
+        service._api.submissions_detail_id_check_get.return_value = SimpleNamespace(
+            state="SUCCESS",
+            status_msg="Accepted",
+            run_success=True,
+            total_testcases=100,
+            total_correct=100,
+            status_runtime="40 ms",
+            runtime_percentile=85.5,
+            status_memory="16.2 MB",
+            memory_percentile=70.0,
+            runtime_error=None,
+            compile_error=None,
+            full_runtime_error=None,
+        )
+
+        result = service.submit_solution("two-sum", "1", "code", "python3")
+        assert result.passed is True
+        assert result.status == "Accepted"
+        assert result.runtime_ms == 40
+        assert result.memory_kb == int(16.2 * 1024)
+        assert result.runtime_percentile == 85.5
+
+    def test_submit_wrong_answer(self):
+        """Test submitting a solution that gets wrong answer."""
+        service = _make_service()
+        service._api.problems_problem_submit_post.return_value = SimpleNamespace(
+            submission_id=12346
+        )
+        service._api.submissions_detail_id_check_get.return_value = SimpleNamespace(
+            state="SUCCESS",
+            status_msg="Wrong Answer",
+            run_success=True,
+            total_testcases=100,
+            total_correct=50,
+            status_runtime=None,
+            runtime_percentile=None,
+            status_memory=None,
+            memory_percentile=None,
+            runtime_error=None,
+            compile_error=None,
+            full_runtime_error=None,
+        )
+
+        result = service.submit_solution("two-sum", "1", "code", "python3")
+        assert result.passed is False
+        assert result.status == "Wrong Answer"
+        assert result.passed_cases == 50
+
+    @patch("aletheia.leetcode.service.time.sleep")
+    def test_poll_timeout(self, mock_sleep):
+        """Test that polling times out correctly."""
+        service = _make_service()
+        # Always return PENDING
+        service._api.submissions_detail_id_check_get.return_value = SimpleNamespace(state="PENDING")
+        with pytest.raises(LeetCodeError, match="timed out"):
+            service._poll_result("some-id", timeout=3)
+
+    def test_import_error_message(self):
+        """Test helpful error when python-leetcode not installed."""
+        with patch.dict("sys.modules", {"leetcode": None}):
+            with pytest.raises(LeetCodeError, match="python-leetcode not installed"):
+                LeetCodeService(_make_creds())
+
+
+class TestResolveCodeSolution:
+    """Tests for resolve_code_solution helper."""
+
+    def test_inline_code(self):
+        """Test resolving inline code (no file extension)."""
+        card = SimpleNamespace(code_solution="def twoSum(nums, target): pass")
+        result = resolve_code_solution(card)
+        assert result == "def twoSum(nums, target): pass"
+
+    def test_file_path(self, tmp_path: Path):
+        """Test resolving code from a file path."""
+        solution_file = tmp_path / "solution.py"
+        solution_file.write_text("class Solution: pass")
+
+        card = SimpleNamespace(code_solution=str(solution_file))
+        result = resolve_code_solution(card)
+        assert result == "class Solution: pass"
+
+    def test_relative_file_path(self, tmp_path: Path):
+        """Test resolving relative file path against ALETHEIA_DATA_DIR."""
+        solution_file = tmp_path / "solution.py"
+        solution_file.write_text("class Solution: pass")
+
+        card = SimpleNamespace(code_solution="solution.py")
+        with patch.dict("os.environ", {"ALETHEIA_DATA_DIR": str(tmp_path)}):
+            result = resolve_code_solution(card)
+        assert result == "class Solution: pass"
+
+    def test_missing_code(self):
+        """Test error when code_solution is not set."""
+        card = SimpleNamespace(code_solution=None)
+        with pytest.raises(LeetCodeError, match="no code_solution"):
+            resolve_code_solution(card)
+
+    def test_missing_file(self):
+        """Test error when solution file does not exist."""
+        card = SimpleNamespace(code_solution="/nonexistent/solution.py")
+        with pytest.raises(LeetCodeError, match="not found"):
+            resolve_code_solution(card)
+
+
+class TestResolveLanguage:
+    """Tests for resolve_language helper."""
+
+    def test_from_problem_source(self):
+        """Test resolving language from problem source."""
+        card = SimpleNamespace(
+            problem_source=SimpleNamespace(language="python3"),
+            code_solution=None,
+        )
+        assert resolve_language(card) == "python3"
+
+    def test_from_alias(self):
+        """Test resolving language alias."""
+        card = SimpleNamespace(
+            problem_source=SimpleNamespace(language="py"),
+            code_solution=None,
+        )
+        assert resolve_language(card) == "python3"
+
+    def test_from_file_extension(self):
+        """Test inferring language from file extension."""
+        card = SimpleNamespace(
+            problem_source=None,
+            code_solution="solution.cpp",
+        )
+        assert resolve_language(card) == "cpp"
+
+    def test_unknown_language(self):
+        """Test error for unknown language."""
+        card = SimpleNamespace(
+            problem_source=SimpleNamespace(language="brainfuck"),
+            code_solution=None,
+        )
+        with pytest.raises(LeetCodeError, match="Unknown language"):
+            resolve_language(card)
+
+    def test_missing_language(self):
+        """Test error when no language can be determined."""
+        card = SimpleNamespace(
+            problem_source=None,
+            code_solution="some inline code",
+        )
+        with pytest.raises(LeetCodeError, match="Cannot determine language"):
+            resolve_language(card)
+
+    def test_source_language_none_fallback_to_extension(self):
+        """Test fallback to file extension when source language is None."""
+        card = SimpleNamespace(
+            problem_source=SimpleNamespace(language=None),
+            code_solution="solution.java",
+        )
+        assert resolve_language(card) == "java"
