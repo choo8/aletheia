@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from aletheia.cli.leetcode import leetcode_app
 from aletheia.core.git_sync import GitSyncError, init_data_repo, pull_data_repo, sync_data_repo
 from aletheia.core.models import (
     AnyCard,
@@ -38,6 +39,9 @@ app = typer.Typer(
     help="Personal knowledge management and spaced repetition for technical learning.",
     no_args_is_help=True,
 )
+
+# Register LeetCode subcommands
+app.add_typer(leetcode_app, name="leetcode")
 console = Console()
 
 # Global storage instance (initialized lazily)
