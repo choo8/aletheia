@@ -106,6 +106,9 @@ gcloud compute scp ~/.ssh/aletheia_deploy aletheia:~/.ssh/aletheia_deploy --zone
 # SSH into the VM:
 gcloud compute ssh aletheia --zone=us-central1-a
 
+# Enable linger so rootless Podman containers survive SSH logout and VM reboots
+loginctl enable-linger $USER
+
 # Register the deploy key as a podman secret
 podman secret create deploy_key ~/.ssh/aletheia_deploy
 
