@@ -133,3 +133,58 @@ class TestCardFromDict:
         data = {"type": "unknown", "front": "Q", "back": "A"}
         with pytest.raises(ValueError, match="Unknown card type"):
             card_from_dict(data)
+
+
+class TestLeetcodeSource:
+    """Tests for LeetcodeSource with new leetcode integration fields."""
+
+    def test_new_fields_round_trip(self):
+        """Test language and internal_question_id serialize and deserialize."""
+        source = LeetcodeSource(
+            platform_id="42",
+            title="Trapping Rain Water",
+            difficulty="hard",
+            language="python3",
+            internal_question_id="317",
+        )
+        data = source.model_dump()
+        restored = LeetcodeSource.model_validate(data)
+        assert restored.language == "python3"
+        assert restored.internal_question_id == "317"
+
+    def test_backwards_compat_missing_new_fields(self):
+        """Test that existing cards without new fields still parse."""
+        data = {
+            "type": "leetcode",
+            "platform": "leetcode",
+            "platform_id": "1",
+            "title": "Two Sum",
+            "difficulty": "easy",
+        }
+        source = LeetcodeSource.model_validate(data)
+        assert source.language is None
+        assert source.internal_question_id is None
+
+    def test_new_fields_default_none(self):
+        """Test that new fields default to None."""
+        source = LeetcodeSource(platform_id="1", title="Two Sum")
+        assert source.language is None
+        assert source.internal_question_id is None
+
+    def test_dsa_problem_card_with_new_source_fields(self):
+        """Test DSAProblemCard with LeetcodeSource containing new fields."""
+        card = DSAProblemCard(
+            front="Q",
+            back="A",
+            problem_source=LeetcodeSource(
+                platform_id="42",
+                title="Trapping Rain Water",
+                difficulty="hard",
+                language="python3",
+                internal_question_id="317",
+            ),
+        )
+        data = card.model_dump()
+        restored = card_from_dict(data)
+        assert restored.problem_source.language == "python3"
+        assert restored.problem_source.internal_question_id == "317"
