@@ -89,6 +89,8 @@ class LeetcodeSource(Source):
     type: str = "leetcode"
     platform: str = "leetcode"
     difficulty: str | None = None  # "easy", "medium", "hard"
+    language: str | None = None  # "python3", "java", "cpp", etc.
+    internal_question_id: str | None = None  # cached internal questionId
 
 
 class Complexity(BaseModel):

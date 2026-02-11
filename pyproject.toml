@@ -31,8 +31,12 @@ web = [
 llm = [
     "litellm>=1.0",
 ]
+leetcode = [
+    "python-leetcode @ git+https://github.com/fspv/python-leetcode.git",
+    "rookiepy>=0.4",
+]
 all = [
-    "aletheia[dev,web,llm]",
+    "aletheia[dev,web,llm,leetcode]",
 ]
 
 [project.scripts]
