@@ -17,6 +17,7 @@ from aletheia.leetcode.auth import (
 from aletheia.leetcode.service import (
     LeetCodeError,
     LeetCodeService,
+    SubmissionStatus,
     resolve_code_solution,
     resolve_language,
 )
@@ -367,7 +368,7 @@ class TestLeetCodeService:
 
         result = service.submit_solution("two-sum", "1", "code", "python3")
         assert result.passed is True
-        assert result.status == "Accepted"
+        assert result.status is SubmissionStatus.ACCEPTED
         assert result.runtime_ms == 40
         assert result.memory_kb == int(16.2 * 1024)
         assert result.runtime_percentile == 85.5
@@ -395,7 +396,7 @@ class TestLeetCodeService:
 
         result = service.submit_solution("two-sum", "1", "code", "python3")
         assert result.passed is False
-        assert result.status == "Wrong Answer"
+        assert result.status is SubmissionStatus.WRONG_ANSWER
         assert result.passed_cases == 50
 
     @patch("aletheia.leetcode.service.time.sleep")
@@ -412,6 +413,23 @@ class TestLeetCodeService:
         with patch.dict("sys.modules", {"leetcode": None}):
             with pytest.raises(LeetCodeError, match="python-leetcode not installed"):
                 LeetCodeService(_make_creds())
+
+
+class TestSubmissionStatus:
+    """Tests for SubmissionStatus enum."""
+
+    def test_known_status(self):
+        """Test that known status values resolve correctly."""
+        assert SubmissionStatus("Accepted") is SubmissionStatus.ACCEPTED
+        assert SubmissionStatus("Wrong Answer") is SubmissionStatus.WRONG_ANSWER
+
+    def test_unknown_status_falls_back(self):
+        """Test that unrecognized status values fall back to UNKNOWN."""
+        assert SubmissionStatus("Some New Status") is SubmissionStatus.UNKNOWN
+
+    def test_string_comparison(self):
+        """Test that StrEnum allows string comparison."""
+        assert SubmissionStatus.ACCEPTED == "Accepted"
 
 
 class TestResolveCodeSolution:

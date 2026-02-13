@@ -3,6 +3,7 @@
 import os
 import time
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 
 from aletheia.leetcode.auth import LeetCodeCredentials
@@ -10,6 +11,23 @@ from aletheia.leetcode.auth import LeetCodeCredentials
 
 class LeetCodeError(Exception):
     """Error from LeetCode service."""
+
+
+class SubmissionStatus(StrEnum):
+    """Known LeetCode submission status values."""
+
+    ACCEPTED = "Accepted"
+    WRONG_ANSWER = "Wrong Answer"
+    TIME_LIMIT_EXCEEDED = "Time Limit Exceeded"
+    MEMORY_LIMIT_EXCEEDED = "Memory Limit Exceeded"
+    RUNTIME_ERROR = "Runtime Error"
+    COMPILE_ERROR = "Compile Error"
+    OUTPUT_LIMIT_EXCEEDED = "Output Limit Exceeded"
+    UNKNOWN = "Unknown"
+
+    @classmethod
+    def _missing_(cls, _value):
+        return cls.UNKNOWN
 
 
 @dataclass
@@ -29,7 +47,7 @@ class TestResult:
 class SubmissionResult:
     """Result from submitting a solution."""
 
-    status: str  # "Accepted", "Wrong Answer", "Time Limit Exceeded", etc.
+    status: SubmissionStatus
     passed: bool
     runtime_ms: int | None = None
     runtime_percentile: float | None = None
@@ -308,8 +326,8 @@ class LeetCodeService:
     @staticmethod
     def _parse_submission_result(result) -> SubmissionResult:
         """Parse a raw poll result into a SubmissionResult."""
-        status_msg = getattr(result, "status_msg", "Unknown")
-        passed = status_msg == "Accepted"
+        status = SubmissionStatus(getattr(result, "status_msg", "Unknown"))
+        passed = status is SubmissionStatus.ACCEPTED
         total = getattr(result, "total_testcases", None)
         correct = getattr(result, "total_correct", None)
 
@@ -341,7 +359,7 @@ class LeetCodeService:
         error_message = "\n".join(error_parts) if error_parts else None
 
         return SubmissionResult(
-            status=status_msg,
+            status=status,
             passed=passed,
             runtime_ms=runtime_ms,
             runtime_percentile=getattr(result, "runtime_percentile", None),
