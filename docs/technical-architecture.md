@@ -735,6 +735,13 @@ aletheia stats --domain dsa        # Per-domain stats
 aletheia check <card-id>           # Get LLM feedback on card
 aletheia check --all               # Check all cards for issues
 
+# LeetCode Integration
+aletheia leetcode login                         # Auth via browser cookies
+aletheia leetcode status                        # Check login status
+aletheia leetcode set-solution <card-id>        # Editor with problem desc + starter code
+aletheia leetcode set-solution <card-id> -f x.py  # Set solution from file
+aletheia leetcode submit <card-id>              # Test + submit to LeetCode
+
 # Sync
 aletheia sync                      # Git add, commit, push
 aletheia sync --pull               # Git pull
@@ -808,6 +815,14 @@ aletheia sync --pull               # Git pull
 - [x] Separate data repo pattern (app code vs. card data in its own git repo)
 - [x] Comprehensive test coverage (23 tests)
 
+### Phase 5: LeetCode Integration ✓
+- [x] Auth module — credential storage + browser cookie extraction via `rookiepy`
+- [x] Service module — `python-leetcode` wrapper (test, submit, problem detail via GraphQL)
+- [x] Model fields — `LeetcodeSource` with `language`, `internal_question_id`
+- [x] CLI commands: `login`, `status`, `submit`, `set-solution`
+- [x] `set-solution` editor auto-fetches problem description + starter code from LeetCode API
+- [x] Graceful degradation when not logged in
+
 ---
 
 ## File Structure (Detailed)
@@ -856,6 +871,10 @@ aletheia/
 │       │   ├── guided.py         # Mode 1: Guided extraction
 │       │   ├── feedback.py       # Mode 4: Quality feedback
 │       │   └── templates.py      # Domain-specific templates
+│       ├── leetcode/
+│       │   ├── __init__.py
+│       │   ├── auth.py           # Credential storage + browser cookies
+│       │   └── service.py        # LeetCode API (test, submit, problem detail)
 │       ├── llm/
 │       │   ├── __init__.py
 │       │   ├── service.py        # LLM service (litellm)

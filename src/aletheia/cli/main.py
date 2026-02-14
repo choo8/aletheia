@@ -2,6 +2,7 @@
 
 import json
 import os
+import shlex
 import subprocess
 import tempfile
 from pathlib import Path
@@ -13,6 +14,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from aletheia.cli.leetcode import leetcode_app
 from aletheia.core.git_sync import GitSyncError, init_data_repo, pull_data_repo, sync_data_repo
 from aletheia.core.models import (
     AnyCard,
@@ -38,6 +40,9 @@ app = typer.Typer(
     help="Personal knowledge management and spaced repetition for technical learning.",
     no_args_is_help=True,
 )
+
+# Register LeetCode subcommands
+app.add_typer(leetcode_app, name="leetcode")
 console = Console()
 
 # Global storage instance (initialized lazily)
@@ -72,9 +77,20 @@ def prompt_or_editor(label: str, default: str = "", required: bool = True) -> st
     return value
 
 
+def _editor_cmd() -> list[str]:
+    """Build the editor command, adding --wait for GUI editors that need it."""
+    raw = os.environ.get("EDITOR", os.environ.get("VISUAL", "vim"))
+    cmd = shlex.split(raw)
+    # GUI editors that return immediately without --wait
+    gui_editors = {"code", "code-insiders", "subl", "atom", "zed"}
+    if cmd and cmd[0] in gui_editors and "--wait" not in cmd and "-w" not in cmd:
+        cmd.append("--wait")
+    return cmd
+
+
 def open_in_editor(content: str, suffix: str = ".yaml") -> str:
     """Open content in the user's editor and return the edited content."""
-    editor = os.environ.get("EDITOR", os.environ.get("VISUAL", "vim"))
+    cmd = _editor_cmd()
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=suffix, delete=False) as f:
         f.write(content)
@@ -82,7 +98,7 @@ def open_in_editor(content: str, suffix: str = ".yaml") -> str:
         temp_path = f.name
 
     try:
-        subprocess.run([editor, temp_path], check=True)
+        subprocess.run([*cmd, temp_path], check=True)
         with open(temp_path) as f:
             return f.read()
     finally:

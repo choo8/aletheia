@@ -129,7 +129,9 @@ all = [
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-cov" },
+    { name = "python-leetcode" },
     { name = "python-multipart" },
+    { name = "rookiepy" },
     { name = "ruff" },
     { name = "uvicorn" },
 ]
@@ -138,6 +140,10 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
+]
+leetcode = [
+    { name = "python-leetcode" },
+    { name = "rookiepy" },
 ]
 llm = [
     { name = "litellm" },
@@ -151,7 +157,7 @@ web = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aletheia", extras = ["dev", "web", "llm"], marker = "extra == 'all'" },
+    { name = "aletheia", extras = ["dev", "web", "llm", "leetcode"], marker = "extra == 'all'" },
     { name = "fastapi", marker = "extra == 'web'", specifier = ">=0.109.0" },
     { name = "fsrs", specifier = ">=4.0" },
     { name = "jinja2", marker = "extra == 'web'", specifier = ">=3.1.0" },
@@ -161,13 +167,15 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0" },
     { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "python-leetcode", marker = "extra == 'leetcode'", git = "https://github.com/fspv/python-leetcode.git" },
     { name = "python-multipart", marker = "extra == 'web'", specifier = ">=0.0.6" },
     { name = "rich", specifier = ">=13.0" },
+    { name = "rookiepy", marker = "extra == 'leetcode'", specifier = ">=0.4" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
     { name = "typer", specifier = ">=0.9.0" },
     { name = "uvicorn", marker = "extra == 'web'", specifier = ">=0.27.0" },
 ]
-provides-extras = ["dev", "web", "llm", "all"]
+provides-extras = ["dev", "web", "llm", "leetcode", "all"]
 
 [[package]]
 name = "annotated-doc"
@@ -1292,12 +1300,37 @@ wheels = [
 ]
 
 [[package]]
+name = "python-dateutil"
+version = "2.9.0.post0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "six" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/66/c0/0c8b6ad9f17a802ee498c46e004a0eb49bc148f2fd230864601a86dcf6db/python-dateutil-2.9.0.post0.tar.gz", hash = "sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3", size = 342432, upload-time = "2024-03-01T18:36:20.211Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ec/57/56b9bcc3c9c6a792fcbaf139543cee77261f3651ca9da0c93f5c1221264b/python_dateutil-2.9.0.post0-py2.py3-none-any.whl", hash = "sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427", size = 229892, upload-time = "2024-03-01T18:36:18.57Z" },
+]
+
+[[package]]
 name = "python-dotenv"
 version = "1.2.1"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f0/26/19cadc79a718c5edbec86fd4919a6b6d3f681039a2f6d66d14be94e75fb9/python_dotenv-1.2.1.tar.gz", hash = "sha256:42667e897e16ab0d66954af0e60a9caa94f0fd4ecf3aaf6d2d260eec1aa36ad6", size = 44221, upload-time = "2025-10-26T15:12:10.434Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/14/1b/a298b06749107c305e1fe0f814c6c74aea7b2f1e10989cb30f544a1b3253/python_dotenv-1.2.1-py3-none-any.whl", hash = "sha256:b81ee9561e9ca4004139c6cbba3a238c32b03e4894671e181b671e8cb8425d61", size = 21230, upload-time = "2025-10-26T15:12:09.109Z" },
+]
+
+[[package]]
+name = "python-leetcode"
+version = "1.2.5"
+source = { git = "https://github.com/fspv/python-leetcode.git#9de718962af9071aab4a7bfb29457078940f143d" }
+dependencies = [
+    { name = "certifi" },
+    { name = "python-dateutil" },
+    { name = "requests" },
+    { name = "setuptools" },
+    { name = "six" },
+    { name = "urllib3" },
 ]
 
 [[package]]
@@ -1486,6 +1519,23 @@ wheels = [
 ]
 
 [[package]]
+name = "rookiepy"
+version = "0.5.6"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/52/b7/b75e3bb8cdd0210a0ffb106002b678170c9a3a50ae1dc1c9bc1f701b4452/rookiepy-0.5.6.tar.gz", hash = "sha256:efa6a93b119478a96b3d8c4454215c4f1af316a24b3b3b3015b73c1c1d887078", size = 45225, upload-time = "2024-11-01T19:28:37.537Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/de/f3/70737571ed2fb7cd9e360b0ec6ce637c8894d712632f7e13b442f5286eef/rookiepy-0.5.6-cp312-cp312-macosx_10_12_x86_64.whl", hash = "sha256:96737f44eab781d5a010b71f7cd70ef43c6a6977dc1c54d019158b8fcfe57167", size = 1404166, upload-time = "2024-11-01T19:26:29.356Z" },
+    { url = "https://files.pythonhosted.org/packages/05/ae/9b69ca2821149cdb5061d6d3098a003affd7ca71b79166e98aed5d7beac8/rookiepy-0.5.6-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:37a8fc437f49672387d4a512df5522a724c4440442e64cad84680f1718f68c50", size = 1311996, upload-time = "2024-11-01T19:26:31.659Z" },
+    { url = "https://files.pythonhosted.org/packages/d7/29/3a7a44027d542c889f9605843d5c7f8df105eb0b79ad45750d7c0b18875b/rookiepy-0.5.6-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:22d0ece1ef732045f0482f72bc199cad81878154ceb62780c1e2f297c62df7e2", size = 2678772, upload-time = "2024-11-01T19:26:33.995Z" },
+    { url = "https://files.pythonhosted.org/packages/6b/62/fb0a8267604f11e7df565509834279b179eadb785e4d5e0b99cc096a27f4/rookiepy-0.5.6-cp312-cp312-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:307943d5780492c533bfeb6bc89d1a4b3e5b91b25af6fc1de280acc1e2ff16f6", size = 2583775, upload-time = "2024-11-01T19:26:36.665Z" },
+    { url = "https://files.pythonhosted.org/packages/5b/0b/c1f85445a00107f97f488f5f14ac25f1994c8436c543263e43865380e553/rookiepy-0.5.6-cp312-cp312-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:c607eef14f64ba284f3754449b6eb079aa8aaa66b443d0cdd2ec9aaa1814a8da", size = 2993272, upload-time = "2024-11-01T19:26:39.668Z" },
+    { url = "https://files.pythonhosted.org/packages/4c/b4/7ca3ab1860f38e1d79df051aad6e8826732f3dee77fd694f226e20e8389c/rookiepy-0.5.6-cp312-cp312-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:19f4b95436705b38e4a55cfa9f3d999bb4edc6a7f91ba13b1b90bb14b1796fdb", size = 2871214, upload-time = "2024-11-01T19:26:42.24Z" },
+    { url = "https://files.pythonhosted.org/packages/8a/36/f45c3a833595285d790d91de20e64dff5ae1780a407033a018f0efccf852/rookiepy-0.5.6-cp312-cp312-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:95b881f2f3d93bb56808eaaf8ac9e0e5e3245dda837edab194834a3caaadcbe7", size = 2971688, upload-time = "2024-11-01T19:26:44.341Z" },
+    { url = "https://files.pythonhosted.org/packages/19/c4/59b5e0b6efcd919683578605bfac4bc112ac34de5a871094fe3efa58896b/rookiepy-0.5.6-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:2c49a0b59bc0329928a369a479f9b1c16cbe3a2548dd8273b13515c7ced73449", size = 2801469, upload-time = "2024-11-01T19:26:47.997Z" },
+    { url = "https://files.pythonhosted.org/packages/e4/38/bba16936ece960db7ed10f8ebf05dc6228959511d3837020da1e9b7dcdf6/rookiepy-0.5.6-cp312-none-win_amd64.whl", hash = "sha256:6bb956c9f2dece5101aafc7a715bc672c5b30ddcaa55c9926d12440635d89cfc", size = 2441230, upload-time = "2024-11-01T19:26:50.486Z" },
+]
+
+[[package]]
 name = "rpds-py"
 version = "0.30.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1592,12 +1642,30 @@ wheels = [
 ]
 
 [[package]]
+name = "setuptools"
+version = "81.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0d/1c/73e719955c59b8e424d015ab450f51c0af856ae46ea2da83eba51cc88de1/setuptools-81.0.0.tar.gz", hash = "sha256:487b53915f52501f0a79ccfd0c02c165ffe06631443a886740b91af4b7a5845a", size = 1198299, upload-time = "2026-02-06T21:10:39.601Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e1/e3/c164c88b2e5ce7b24d667b9bd83589cf4f3520d97cad01534cd3c4f55fdb/setuptools-81.0.0-py3-none-any.whl", hash = "sha256:fdd925d5c5d9f62e4b74b30d6dd7828ce236fd6ed998a08d81de62ce5a6310d6", size = 1062021, upload-time = "2026-02-06T21:10:37.175Z" },
+]
+
+[[package]]
 name = "shellingham"
 version = "1.5.4"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/58/15/8b3609fd3830ef7b27b655beb4b4e9c62313a4e8da8c676e142cc210d58e/shellingham-1.5.4.tar.gz", hash = "sha256:8dbca0739d487e5bd35ab3ca4b36e11c4078f3a234bfce294b0a0291363404de", size = 10310, upload-time = "2023-10-24T04:13:40.426Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e0/f9/0595336914c5619e5f28a1fb793285925a8cd4b432c9da0a987836c7f822/shellingham-1.5.4-py2.py3-none-any.whl", hash = "sha256:7ecfff8f2fd72616f7481040475a65b2bf8af90a56c89140852d1120324e8686", size = 9755, upload-time = "2023-10-24T04:13:38.866Z" },
+]
+
+[[package]]
+name = "six"
+version = "1.17.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/94/e7/b2c673351809dca68a0e064b6af791aa332cf192da575fd474ed7d6f16a2/six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81", size = 34031, upload-time = "2024-12-04T17:35:28.174Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274", size = 11050, upload-time = "2024-12-04T17:35:26.475Z" },
 ]
 
 [[package]]

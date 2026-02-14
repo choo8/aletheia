@@ -18,6 +18,7 @@ from aletheia.leetcode.service import (
     LeetCodeError,
     LeetCodeService,
     SubmissionStatus,
+    _html_to_text,
     resolve_code_solution,
     resolve_language,
 )
@@ -254,8 +255,23 @@ class TestLeetCodeService:
         with pytest.raises(LeetCodeError, match="Failed to verify"):
             service.whoami()
 
-    def test_resolve_question_id_success(self):
-        """Test resolving frontend ID to internal question ID."""
+    def test_resolve_question_id_by_title_slug(self):
+        """Test resolving question ID via direct title_slug query."""
+        service = _make_service()
+        service._api.graphql_post.return_value = _raw_response(
+            {"data": {"question": {"questionId": "317"}}}
+        )
+        assert service.resolve_question_id("42", title_slug="trapping-rain-water") == "317"
+
+    def test_resolve_question_id_by_title_slug_not_found(self):
+        """Test title_slug query when problem doesn't exist."""
+        service = _make_service()
+        service._api.graphql_post.return_value = _raw_response({"data": {"question": None}})
+        with pytest.raises(LeetCodeError, match="not found"):
+            service.resolve_question_id("99999", title_slug="nonexistent")
+
+    def test_resolve_question_id_search_fallback(self):
+        """Test resolving frontend ID via search when no title_slug."""
         service = _make_service()
         service._api.graphql_post.return_value = SimpleNamespace(
             data=SimpleNamespace(
@@ -273,7 +289,7 @@ class TestLeetCodeService:
         assert service.resolve_question_id("42") == "317"
 
     def test_resolve_question_id_not_found(self):
-        """Test resolving non-existent problem."""
+        """Test resolving non-existent problem via search."""
         service = _make_service()
         service._api.graphql_post.return_value = SimpleNamespace(
             data=SimpleNamespace(problemset_question_list=SimpleNamespace(questions=[]))
@@ -284,18 +300,18 @@ class TestLeetCodeService:
     def test_test_solution_pass(self):
         """Test running a solution that passes all test cases."""
         service = _make_service()
-        service._api.problems_problem_interpret_solution_post.return_value = SimpleNamespace(
-            interpret_id="interp-123"
+        service._api.problems_problem_interpret_solution_post.return_value = _raw_response(
+            {"interpret_id": "interp-123"}
         )
-        service._api.submissions_detail_id_check_get.return_value = SimpleNamespace(
-            state="SUCCESS",
-            run_success=True,
-            total_testcases=3,
-            total_correct=3,
-            expected_code_answer=["[1,2]"],
-            code_answer=["[1,2]"],
-            runtime_error=None,
-            compile_error=None,
+        service._api.submissions_detail_id_check_get.return_value = _raw_response(
+            {
+                "state": "SUCCESS",
+                "run_success": True,
+                "total_testcases": 3,
+                "total_correct": 3,
+                "expected_code_answer": ["[1,2]"],
+                "code_answer": ["[1,2]"],
+            }
         )
 
         result = service.test_solution("two-sum", "1", "code", "python3")
@@ -306,18 +322,18 @@ class TestLeetCodeService:
     def test_test_solution_fail(self):
         """Test running a solution that fails test cases."""
         service = _make_service()
-        service._api.problems_problem_interpret_solution_post.return_value = SimpleNamespace(
-            interpret_id="interp-456"
+        service._api.problems_problem_interpret_solution_post.return_value = _raw_response(
+            {"interpret_id": "interp-456"}
         )
-        service._api.submissions_detail_id_check_get.return_value = SimpleNamespace(
-            state="SUCCESS",
-            run_success=True,
-            total_testcases=3,
-            total_correct=1,
-            expected_code_answer=["[1,2]"],
-            code_answer=["[2,3]"],
-            runtime_error=None,
-            compile_error=None,
+        service._api.submissions_detail_id_check_get.return_value = _raw_response(
+            {
+                "state": "SUCCESS",
+                "run_success": True,
+                "total_testcases": 3,
+                "total_correct": 1,
+                "expected_code_answer": ["[1,2]"],
+                "code_answer": ["[2,3]"],
+            }
         )
 
         result = service.test_solution("two-sum", "1", "code", "python3")
@@ -327,18 +343,17 @@ class TestLeetCodeService:
     def test_test_solution_runtime_error(self):
         """Test running a solution with a runtime error."""
         service = _make_service()
-        service._api.problems_problem_interpret_solution_post.return_value = SimpleNamespace(
-            interpret_id="interp-789"
+        service._api.problems_problem_interpret_solution_post.return_value = _raw_response(
+            {"interpret_id": "interp-789"}
         )
-        service._api.submissions_detail_id_check_get.return_value = SimpleNamespace(
-            state="SUCCESS",
-            run_success=False,
-            total_testcases=0,
-            total_correct=0,
-            expected_code_answer=None,
-            code_answer=None,
-            runtime_error="IndexError: list index out of range",
-            compile_error=None,
+        service._api.submissions_detail_id_check_get.return_value = _raw_response(
+            {
+                "state": "SUCCESS",
+                "run_success": False,
+                "total_testcases": 0,
+                "total_correct": 0,
+                "runtime_error": "IndexError: list index out of range",
+            }
         )
 
         result = service.test_solution("two-sum", "1", "code", "python3")
@@ -348,22 +363,21 @@ class TestLeetCodeService:
     def test_submit_accepted(self):
         """Test submitting a solution that gets accepted."""
         service = _make_service()
-        service._api.problems_problem_submit_post.return_value = SimpleNamespace(
-            submission_id=12345
+        service._api.problems_problem_submit_post.return_value = _raw_response(
+            {"submission_id": 12345}
         )
-        service._api.submissions_detail_id_check_get.return_value = SimpleNamespace(
-            state="SUCCESS",
-            status_msg="Accepted",
-            run_success=True,
-            total_testcases=100,
-            total_correct=100,
-            status_runtime="40 ms",
-            runtime_percentile=85.5,
-            status_memory="16.2 MB",
-            memory_percentile=70.0,
-            runtime_error=None,
-            compile_error=None,
-            full_runtime_error=None,
+        service._api.submissions_detail_id_check_get.return_value = _raw_response(
+            {
+                "state": "SUCCESS",
+                "status_msg": "Accepted",
+                "run_success": True,
+                "total_testcases": 100,
+                "total_correct": 100,
+                "status_runtime": "40 ms",
+                "runtime_percentile": 85.5,
+                "status_memory": "16.2 MB",
+                "memory_percentile": 70.0,
+            }
         )
 
         result = service.submit_solution("two-sum", "1", "code", "python3")
@@ -376,22 +390,17 @@ class TestLeetCodeService:
     def test_submit_wrong_answer(self):
         """Test submitting a solution that gets wrong answer."""
         service = _make_service()
-        service._api.problems_problem_submit_post.return_value = SimpleNamespace(
-            submission_id=12346
+        service._api.problems_problem_submit_post.return_value = _raw_response(
+            {"submission_id": 12346}
         )
-        service._api.submissions_detail_id_check_get.return_value = SimpleNamespace(
-            state="SUCCESS",
-            status_msg="Wrong Answer",
-            run_success=True,
-            total_testcases=100,
-            total_correct=50,
-            status_runtime=None,
-            runtime_percentile=None,
-            status_memory=None,
-            memory_percentile=None,
-            runtime_error=None,
-            compile_error=None,
-            full_runtime_error=None,
+        service._api.submissions_detail_id_check_get.return_value = _raw_response(
+            {
+                "state": "SUCCESS",
+                "status_msg": "Wrong Answer",
+                "run_success": True,
+                "total_testcases": 100,
+                "total_correct": 50,
+            }
         )
 
         result = service.submit_solution("two-sum", "1", "code", "python3")
@@ -404,7 +413,9 @@ class TestLeetCodeService:
         """Test that polling times out correctly."""
         service = _make_service()
         # Always return PENDING
-        service._api.submissions_detail_id_check_get.return_value = SimpleNamespace(state="PENDING")
+        service._api.submissions_detail_id_check_get.return_value = _raw_response(
+            {"state": "PENDING"}
+        )
         with pytest.raises(LeetCodeError, match="timed out"):
             service._poll_result("some-id", timeout=3)
 
@@ -525,3 +536,104 @@ class TestResolveLanguage:
             code_solution="solution.java",
         )
         assert resolve_language(card) == "java"
+
+
+class TestHtmlToText:
+    """Tests for _html_to_text helper."""
+
+    def test_paragraphs(self):
+        """Test paragraph tags become newlines."""
+        html = "<p>First paragraph.</p><p>Second paragraph.</p>"
+        text = _html_to_text(html)
+        assert "First paragraph." in text
+        assert "Second paragraph." in text
+        # Paragraphs should be on separate lines
+        assert "\n" in text
+
+    def test_list_items(self):
+        """Test list items get bullet prefixes."""
+        html = "<ul><li>one</li><li>two</li></ul>"
+        text = _html_to_text(html)
+        assert "- one" in text
+        assert "- two" in text
+
+    def test_html_entities(self):
+        """Test HTML entities are decoded."""
+        html = "<p>a &lt; b &amp; c &gt; d</p>"
+        text = _html_to_text(html)
+        assert "a < b & c > d" in text
+
+    def test_numeric_entities(self):
+        """Test numeric character references are decoded."""
+        html = "<p>&#60;tag&#62;</p>"
+        text = _html_to_text(html)
+        assert "<tag>" in text
+
+    def test_empty_input(self):
+        """Test empty/falsy input returns empty string."""
+        assert _html_to_text("") == ""
+        assert _html_to_text(None) == ""
+
+    def test_br_tags(self):
+        """Test <br> tags become newlines."""
+        html = "line one<br>line two"
+        text = _html_to_text(html)
+        assert "line one" in text
+        assert "line two" in text
+
+
+def _raw_response(data: dict) -> SimpleNamespace:
+    """Create a mock raw HTTP response with JSON data."""
+    import json
+
+    return SimpleNamespace(data=json.dumps(data).encode())
+
+
+class TestProblemDetail:
+    """Tests for get_problem_detail."""
+
+    def test_success(self):
+        """Test successful fetch of problem detail."""
+        service = _make_service()
+        service._api.graphql_post.return_value = _raw_response(
+            {
+                "data": {
+                    "question": {
+                        "content": "<p>Given an array...</p>",
+                        "codeSnippets": [
+                            {
+                                "langSlug": "python3",
+                                "code": "class Solution:\n    def twoSum(self, nums, target):",
+                            },
+                            {
+                                "langSlug": "cpp",
+                                "code": "class Solution {\npublic:\n};",
+                            },
+                        ],
+                    }
+                }
+            }
+        )
+
+        detail = service.get_problem_detail("two-sum")
+        assert "Given an array" in detail.content_html
+        assert "Given an array" in detail.content_text
+        assert "python3" in detail.code_snippets
+        assert "cpp" in detail.code_snippets
+        assert "twoSum" in detail.code_snippets["python3"]
+
+    def test_not_found(self):
+        """Test error when problem slug is invalid."""
+        service = _make_service()
+        service._api.graphql_post.return_value = _raw_response({"data": {"question": None}})
+
+        with pytest.raises(LeetCodeError, match="not found"):
+            service.get_problem_detail("nonexistent-problem")
+
+    def test_api_error(self):
+        """Test error when API call fails."""
+        service = _make_service()
+        service._api.graphql_post.side_effect = RuntimeError("network error")
+
+        with pytest.raises(LeetCodeError, match="Failed to fetch"):
+            service.get_problem_detail("two-sum")

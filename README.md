@@ -23,6 +23,7 @@ Unlike traditional flashcard apps optimized for rote memorization, Aletheia is d
 - **LLM-assisted card creation and refinement** (guided extraction, guided editing, quality feedback)
 - **Card lifecycle management** - suspend, resume, exhaust, reformulate, split, and merge cards
 - **Full-text search** via SQLite FTS5 with prefix matching and 11 indexed fields
+- **LeetCode integration** - login, submit solutions, and auto-fetch problem descriptions
 - **CLI** for card management
 - **Mobile-friendly web interface** for review and search
 
@@ -106,6 +107,13 @@ aletheia reformulate <card-id> -g       # LLM-guided reformulation
 aletheia split <card-id>                # Split into multiple cards
 aletheia merge <id1> <id2>              # Merge cards into one
 
+# LeetCode integration
+aletheia leetcode login                         # Auth via browser cookies
+aletheia leetcode status                        # Check login status
+aletheia leetcode set-solution <card-id>        # Open editor with problem description + starter code
+aletheia leetcode set-solution <card-id> -f sol.py  # Set solution from file
+aletheia leetcode submit <card-id>              # Test + submit to LeetCode
+
 # Git sync (separate data repo)
 aletheia init ~/aletheia-data        # Create a data repository
 aletheia sync                        # Commit & push changes
@@ -183,6 +191,7 @@ aletheia/
 │   ├── cli/            # Command-line interface
 │   ├── web/            # Web server (Phase 2)
 │   ├── llm/            # LLM integration (Phase 3)
+│   ├── leetcode/       # LeetCode API integration
 │   └── creation/       # Card creation modes
 └── tests/              # Test suite
 ```

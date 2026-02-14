@@ -3,6 +3,7 @@
 from aletheia.leetcode.service import (
     LeetCodeError,
     LeetCodeService,
+    ProblemDetail,
     SubmissionResult,
     SubmissionStatus,
     TestResult,
@@ -11,6 +12,7 @@ from aletheia.leetcode.service import (
 __all__ = [
     "LeetCodeError",
     "LeetCodeService",
+    "ProblemDetail",
     "SubmissionResult",
     "SubmissionStatus",
     "TestResult",
