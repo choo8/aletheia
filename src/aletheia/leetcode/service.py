@@ -66,6 +66,7 @@ class ProblemDetail:
     content_html: str
     content_text: str
     code_snippets: dict[str, str] = field(default_factory=dict)
+    sample_test_cases: str = ""
 
 
 class _HTMLToTextParser(HTMLParser):
@@ -214,17 +215,52 @@ class LeetCodeService:
         except AttributeError:
             raise LeetCodeError("Session expired or invalid credentials")
 
-    def resolve_question_id(self, frontend_id: str) -> str:
-        """Look up the internal questionId for a frontend problem number.
+    def resolve_question_id(
+        self,
+        frontend_id: str,
+        title_slug: str | None = None,
+    ) -> str:
+        """Look up the internal questionId for a problem.
 
         The LeetCode API uses internal IDs that differ from the frontend
         numbers shown on the website (e.g., problem #42 may have internal
         ID 317).
 
+        When title_slug is provided, uses a direct query (reliable).
+        Otherwise falls back to a keyword search by frontend_id.
+
         Raises LeetCodeError if the problem is not found.
         """
+        import json
+
         import leetcode
 
+        # Prefer direct lookup by title_slug — deterministic and reliable
+        if title_slug:
+            query = leetcode.GraphqlQuery(
+                query="""
+                query questionDetail($titleSlug: String!) {
+                    question(titleSlug: $titleSlug) {
+                        questionId
+                    }
+                }
+                """,
+                variables={"titleSlug": title_slug},
+            )
+
+            try:
+                raw = self._api.graphql_post(body=query, _preload_content=False)
+                data = json.loads(raw.data)
+            except Exception as e:
+                raise LeetCodeError(f"Failed to resolve question ID: {e}") from e
+
+            question = (data.get("data") or {}).get("question")
+            if question and question.get("questionId"):
+                return str(question["questionId"])
+
+            raise LeetCodeError(f"Problem not found: {title_slug}")
+
+        # Fallback: search by frontend ID
         query = leetcode.GraphqlQuery(
             query="""
             query problemsetQuestionList(
@@ -245,7 +281,7 @@ class LeetCodeService:
             """,
             variables={
                 "categorySlug": "",
-                "limit": 1,
+                "limit": 20,
                 "skip": 0,
                 "filters": {"searchKeywords": frontend_id},
             },
@@ -278,6 +314,8 @@ class LeetCodeService:
 
         Raises LeetCodeError if the problem is not found or API fails.
         """
+        import json
+
         import leetcode
 
         query = leetcode.GraphqlQuery(
@@ -285,6 +323,7 @@ class LeetCodeService:
             query questionDetail($titleSlug: String!) {
                 question(titleSlug: $titleSlug) {
                     content
+                    exampleTestcaseList
                     codeSnippets {
                         langSlug
                         code
@@ -295,22 +334,25 @@ class LeetCodeService:
             variables={"titleSlug": title_slug},
         )
 
+        # Use _preload_content=False to get raw JSON — the library's
+        # auto-generated models can't deserialize codeSnippets properly.
         try:
-            response = self._api.graphql_post(body=query)
+            raw = self._api.graphql_post(body=query, _preload_content=False)
+            data = json.loads(raw.data)
         except Exception as e:
             raise LeetCodeError(f"Failed to fetch problem detail: {e}") from e
 
-        question = getattr(getattr(response, "data", None), "question", None)
+        question = (data.get("data") or {}).get("question")
         if question is None:
             raise LeetCodeError(f"Problem not found: {title_slug}")
 
-        content_html = getattr(question, "content", "") or ""
-        code_snippets_raw = getattr(question, "code_snippets", None) or []
+        content_html = question.get("content", "") or ""
+        code_snippets_raw = question.get("codeSnippets") or []
 
         snippets: dict[str, str] = {}
         for snippet in code_snippets_raw:
-            lang_slug = getattr(snippet, "lang_slug", None)
-            code = getattr(snippet, "code", None)
+            lang_slug = snippet.get("langSlug")
+            code = snippet.get("code")
             if lang_slug and code:
                 snippets[lang_slug] = code
 
@@ -318,6 +360,7 @@ class LeetCodeService:
             content_html=content_html,
             content_text=_html_to_text(content_html),
             code_snippets=snippets,
+            sample_test_cases="\n".join(question.get("exampleTestcaseList") or []),
         )
 
     def test_solution(
@@ -337,24 +380,39 @@ class LeetCodeService:
             language: LeetCode language slug (e.g., "python3")
             data_input: Custom test input (uses default if empty)
         """
-        import leetcode
+        import json
 
-        body = leetcode.TestSubmission(
-            data_input=data_input,
-            lang=language,
-            question_id=question_id,
-            test_mode=True,
-            typed_code=code,
-        )
+        # Fetch default sample test cases when none provided
+        if not data_input:
+            try:
+                detail = self.get_problem_detail(title_slug)
+                data_input = detail.sample_test_cases
+            except LeetCodeError:
+                pass  # best-effort; proceed with empty input
+
+        # Bypass TestSubmission model — LeetCode rejects the `test_mode`
+        # field it includes with "You do not have permissions to use test mode."
+        body = {
+            "data_input": data_input,
+            "lang": language,
+            "question_id": int(question_id),
+            "typed_code": code,
+        }
 
         try:
-            interpretation = self._api.problems_problem_interpret_solution_post(
-                problem=title_slug, body=body
+            raw = self._api.problems_problem_interpret_solution_post(
+                problem=title_slug, body=body, _preload_content=False
             )
+            data = json.loads(raw.data)
         except Exception as e:
             raise LeetCodeError(f"Failed to submit test: {e}") from e
 
-        result = self._poll_result(interpretation.interpret_id)
+        interpret_id = data.get("interpret_id")
+        if not interpret_id:
+            error = data.get("error") or data
+            raise LeetCodeError(f"LeetCode test error: {error}")
+
+        result = self._poll_result(interpret_id)
         return self._parse_test_result(result)
 
     def submit_solution(
@@ -372,29 +430,39 @@ class LeetCodeService:
             code: Solution source code
             language: LeetCode language slug (e.g., "python3")
         """
-        import leetcode
+        import json
 
-        body = leetcode.Submission(
-            judge_type="large",
-            lang=language,
-            question_id=question_id,
-            test_mode=False,
-            typed_code=code,
-        )
+        # Use a raw dict to avoid model quirks (same pattern as test_solution)
+        body = {
+            "judge_type": "large",
+            "lang": language,
+            "question_id": int(question_id),
+            "typed_code": code,
+        }
 
         try:
-            submission = self._api.problems_problem_submit_post(problem=title_slug, body=body)
+            raw = self._api.problems_problem_submit_post(
+                problem=title_slug, body=body, _preload_content=False
+            )
+            data = json.loads(raw.data)
         except Exception as e:
             raise LeetCodeError(f"Failed to submit solution: {e}") from e
 
-        result = self._poll_result(submission.submission_id)
+        submission_id = data.get("submission_id")
+        if not submission_id:
+            error = data.get("error") or data
+            raise LeetCodeError(f"LeetCode submit error: {error}")
+
+        result = self._poll_result(submission_id)
         return self._parse_submission_result(result)
 
-    def _poll_result(self, submission_id, timeout: int = 30):
+    def _poll_result(self, submission_id, timeout: int = 30) -> dict:
         """Poll for submission result with exponential backoff.
 
-        Raises LeetCodeError on timeout.
+        Returns the raw result dict. Raises LeetCodeError on timeout.
         """
+        import json
+
         delay = 1.0
         elapsed = 0.0
 
@@ -403,12 +471,14 @@ class LeetCodeService:
             elapsed += delay
 
             try:
-                result = self._api.submissions_detail_id_check_get(id=submission_id)
+                raw = self._api.submissions_detail_id_check_get(
+                    id=submission_id, _preload_content=False
+                )
+                result = json.loads(raw.data)
             except Exception as e:
                 raise LeetCodeError(f"Failed to check submission status: {e}") from e
 
-            state = getattr(result, "state", None)
-            if state == "SUCCESS":
+            if result.get("state") == "SUCCESS":
                 return result
 
             delay = min(delay * 1.5, 5.0)
@@ -416,16 +486,16 @@ class LeetCodeService:
         raise LeetCodeError(f"Submission timed out after {timeout}s")
 
     @staticmethod
-    def _parse_test_result(result) -> TestResult:
-        """Parse a raw poll result into a TestResult."""
-        runtime_error = getattr(result, "runtime_error", None) or None
-        compile_error = getattr(result, "compile_error", None) or None
-        run_success = getattr(result, "run_success", False)
-        total = getattr(result, "total_testcases", 0) or 0
-        correct = getattr(result, "total_correct", 0) or 0
+    def _parse_test_result(result: dict) -> TestResult:
+        """Parse a raw poll result dict into a TestResult."""
+        runtime_error = result.get("runtime_error") or None
+        compile_error = result.get("compile_error") or None
+        run_success = result.get("run_success", False)
+        total = result.get("total_testcases", 0) or 0
+        correct = result.get("total_correct", 0) or 0
 
-        expected = getattr(result, "expected_code_answer", None)
-        actual = getattr(result, "code_answer", None)
+        expected = result.get("expected_code_answer")
+        actual = result.get("code_answer")
 
         passed = run_success and (not runtime_error) and (not compile_error)
         if total > 0:
@@ -442,15 +512,15 @@ class LeetCodeService:
         )
 
     @staticmethod
-    def _parse_submission_result(result) -> SubmissionResult:
-        """Parse a raw poll result into a SubmissionResult."""
-        status = SubmissionStatus(getattr(result, "status_msg", "Unknown"))
+    def _parse_submission_result(result: dict) -> SubmissionResult:
+        """Parse a raw poll result dict into a SubmissionResult."""
+        status = SubmissionStatus(result.get("status_msg", "Unknown"))
         passed = status is SubmissionStatus.ACCEPTED
-        total = getattr(result, "total_testcases", None)
-        correct = getattr(result, "total_correct", None)
+        total = result.get("total_testcases")
+        correct = result.get("total_correct")
 
         runtime_ms = None
-        status_runtime = getattr(result, "status_runtime", None)
+        status_runtime = result.get("status_runtime")
         if status_runtime:
             try:
                 runtime_ms = int(status_runtime.replace(" ms", "").strip())
@@ -458,7 +528,7 @@ class LeetCodeService:
                 pass
 
         memory_kb = None
-        status_memory = getattr(result, "status_memory", None)
+        status_memory = result.get("status_memory")
         if status_memory:
             try:
                 mem_str = status_memory.strip()
@@ -470,8 +540,8 @@ class LeetCodeService:
                 pass
 
         error_parts = []
-        for attr in ("runtime_error", "compile_error", "full_runtime_error"):
-            val = getattr(result, attr, None)
+        for key in ("runtime_error", "compile_error", "full_runtime_error"):
+            val = result.get(key)
             if val:
                 error_parts.append(str(val))
         error_message = "\n".join(error_parts) if error_parts else None
@@ -480,9 +550,9 @@ class LeetCodeService:
             status=status,
             passed=passed,
             runtime_ms=runtime_ms,
-            runtime_percentile=getattr(result, "runtime_percentile", None),
+            runtime_percentile=result.get("runtime_percentile"),
             memory_kb=memory_kb,
-            memory_percentile=getattr(result, "memory_percentile", None),
+            memory_percentile=result.get("memory_percentile"),
             total_cases=total,
             passed_cases=correct,
             error_message=error_message,

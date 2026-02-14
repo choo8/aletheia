@@ -318,13 +318,10 @@ class TestSetSolution:
         storage, state_dir = env_and_storage
         card = _save_test_card(storage)
 
-        # Mock subprocess.run to simulate editor writing content
-        def mock_editor(args, check=False):
-            # Write content to the temp file the editor was given
-            with open(args[1], "w") as f:
-                f.write("def solve(): return 42")
-
-        with patch("aletheia.cli.leetcode.subprocess.run", side_effect=mock_editor):
+        with patch(
+            "aletheia.cli.main.open_in_editor",
+            return_value="def solve(): return 42",
+        ):
             result = runner.invoke(app, ["leetcode", "set-solution", card.id[:8]])
 
         assert result.exit_code == 0
@@ -355,16 +352,13 @@ class TestSetSolution:
 
         editor_content = {}
 
-        def mock_editor(args, check=False):
-            # Read what was written to the temp file, then write final code
-            with open(args[1]) as f:
-                editor_content["initial"] = f.read()
-            with open(args[1], "w") as f:
-                f.write("class Solution:\n    def trap(self): return 0")
+        def mock_open_in_editor(content, suffix=".py"):
+            editor_content["initial"] = content
+            return "class Solution:\n    def trap(self): return 0"
 
         with (
             patch(f"{_SVC}.LeetCodeService", return_value=mock_service),
-            patch("aletheia.cli.leetcode.subprocess.run", side_effect=mock_editor),
+            patch("aletheia.cli.main.open_in_editor", side_effect=mock_open_in_editor),
         ):
             result = runner.invoke(app, ["leetcode", "set-solution", card.id[:8]])
 
@@ -382,11 +376,10 @@ class TestSetSolution:
 
         # No credentials saved — fetch should silently fail
 
-        def mock_editor(args, check=False):
-            with open(args[1], "w") as f:
-                f.write("class Solution:\n    def trap(self): return 0")
-
-        with patch("aletheia.cli.leetcode.subprocess.run", side_effect=mock_editor):
+        with patch(
+            "aletheia.cli.main.open_in_editor",
+            return_value="class Solution:\n    def trap(self): return 0",
+        ):
             result = runner.invoke(app, ["leetcode", "set-solution", card.id[:8]])
 
         assert result.exit_code == 0

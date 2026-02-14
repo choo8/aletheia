@@ -1,8 +1,6 @@
 """CLI subcommands for LeetCode integration."""
 
 import os
-import subprocess
-import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -174,7 +172,9 @@ def submit(
     if not question_id:
         rprint("[dim]Resolving question ID...[/dim]")
         try:
-            question_id = service.resolve_question_id(card.problem_source.platform_id)
+            question_id = service.resolve_question_id(
+                card.problem_source.platform_id, title_slug=title_slug
+            )
             card.problem_source.internal_question_id = question_id
             storage.save_card(card)
         except LeetCodeError as e:
@@ -285,6 +285,11 @@ def set_solution(
     storage = _get_storage()
     card = _require_dsa_card(storage, card_id)
 
+    # Resolve language slug: explicit flag > card's existing language > python3
+    lang_slug = language
+    if not lang_slug and card.problem_source and card.problem_source.language:
+        lang_slug = card.problem_source.language
+
     if file:
         # Use file path
         path = Path(file)
@@ -294,16 +299,16 @@ def set_solution(
         card.code_solution = str(path.resolve())
         rprint(f"[dim]Solution set to file: {path.resolve()}[/dim]")
     else:
-        # Open editor
-        existing = card.code_solution or ""
-        editor = os.environ.get("EDITOR", os.environ.get("VISUAL", "vim"))
+        # Open editor — default to python3 when no language is known
+        from aletheia.cli.main import open_in_editor
 
-        # Determine language slug and file extension
-        lang_slug = language
-        if not lang_slug and card.problem_source and card.problem_source.language:
-            lang_slug = card.problem_source.language
+        if not lang_slug:
+            lang_slug = "python3"
+
+        existing = card.code_solution or ""
+
         slug_to_ext = _get_slug_to_ext()
-        suffix = slug_to_ext.get(lang_slug, ".py") if lang_slug else ".py"
+        suffix = slug_to_ext.get(lang_slug, ".py")
 
         # Determine initial editor content
         is_file_path = existing.endswith(tuple(slug_to_ext.values()))
@@ -313,17 +318,7 @@ def set_solution(
         if not initial_content:
             initial_content = _fetch_editor_content(card, lang_slug or "python3")
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=suffix, delete=False) as f:
-            f.write(initial_content)
-            f.flush()
-            temp_path = f.name
-
-        try:
-            subprocess.run([editor, temp_path], check=True)
-            with open(temp_path) as f:
-                code = f.read()
-        finally:
-            os.unlink(temp_path)
+        code = open_in_editor(initial_content, suffix=suffix)
 
         if not code.strip():
             rprint("[yellow]Empty content — no changes made.[/yellow]")
@@ -332,12 +327,17 @@ def set_solution(
         card.code_solution = code
         rprint("[dim]Solution set to inline code.[/dim]")
 
-    # Set language if provided
+    # Persist language: explicit --language always wins, otherwise backfill if missing
     if language:
         if card.problem_source is None:
             card.problem_source = LeetcodeSource(platform_id="", title="")
         card.problem_source.language = language
         rprint(f"[dim]Language set to: {language}[/dim]")
+    elif lang_slug and (not card.problem_source or not card.problem_source.language):
+        if card.problem_source is None:
+            card.problem_source = LeetcodeSource(platform_id="", title="")
+        card.problem_source.language = lang_slug
+        rprint(f"[dim]Language set to: {lang_slug}[/dim]")
 
     storage.save_card(card)
     rprint(f"[green]Card updated:[/green] {card.id[:8]}")
@@ -348,19 +348,26 @@ def _fetch_editor_content(card: "DSAProblemCard", lang_slug: str) -> str:
 
     Returns the formatted content or empty string on any failure.
     """
+    from aletheia.leetcode.auth import get_credentials
+    from aletheia.leetcode.service import LeetCodeService
+
+    state_dir = _get_state_dir()
+    creds = get_credentials(state_dir)
+    if creds is None:
+        rprint("[dim]Skipping problem fetch (not logged in).[/dim]")
+        return ""
+
     try:
-        from aletheia.leetcode.auth import get_credentials
-        from aletheia.leetcode.service import LeetCodeService
-
-        state_dir = _get_state_dir()
-        creds = get_credentials(state_dir)
-        if creds is None:
-            return ""
-
         title_slug = _get_title_slug(card)
+    except SystemExit:
+        rprint("[dim]Skipping problem fetch (no URL or title on card).[/dim]")
+        return ""
+
+    try:
         service = LeetCodeService(creds)
         detail = service.get_problem_detail(title_slug)
-    except Exception:
+    except Exception as e:
+        rprint(f"[dim]Could not fetch problem detail: {e}[/dim]")
         return ""
 
     parts: list[str] = []
