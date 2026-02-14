@@ -16,7 +16,7 @@ console = Console()
 
 leetcode_app = typer.Typer(
     name="leetcode",
-    help="LeetCode integration: login, test, and submit solutions.",
+    help="LeetCode integration: login, submit, and manage solutions.",
     no_args_is_help=True,
 )
 
@@ -115,88 +115,6 @@ def status() -> None:
     except LeetCodeError:
         rprint(f"[yellow]Session expired for: {creds.username}[/yellow]")
         rprint("[dim]Run: aletheia leetcode login[/dim]")
-
-
-# ============================================================================
-# TEST command
-# ============================================================================
-
-
-@leetcode_app.command("test")
-def test_solution(
-    card_id: str = typer.Argument(..., help="Card ID (or partial ID)"),
-) -> None:
-    """Test a card's solution against LeetCode sample test cases."""
-    from aletheia.leetcode.auth import get_credentials
-    from aletheia.leetcode.service import (
-        LeetCodeError,
-        LeetCodeService,
-        resolve_code_solution,
-        resolve_language,
-    )
-
-    storage = _get_storage()
-    card = _require_dsa_card(storage, card_id)
-
-    # Validate prerequisites
-    if not card.problem_source:
-        rprint("[red]Card has no problem_source set.[/red]")
-        raise typer.Exit(1)
-
-    try:
-        code = resolve_code_solution(card)
-        language = resolve_language(card)
-    except LeetCodeError as e:
-        rprint(f"[red]{e}[/red]")
-        raise typer.Exit(1)
-
-    # Get credentials and service
-    state_dir = _get_state_dir()
-    creds = get_credentials(state_dir)
-    if creds is None:
-        rprint("[red]Not logged in. Run: aletheia leetcode login[/red]")
-        raise typer.Exit(1)
-
-    try:
-        service = LeetCodeService(creds)
-    except LeetCodeError as e:
-        rprint(f"[red]{e}[/red]")
-        raise typer.Exit(1)
-
-    # Resolve question ID (cache on card)
-    question_id = card.problem_source.internal_question_id
-    title_slug = _get_title_slug(card)
-
-    if not question_id:
-        rprint("[dim]Resolving question ID...[/dim]")
-        try:
-            question_id = service.resolve_question_id(card.problem_source.platform_id)
-            card.problem_source.internal_question_id = question_id
-            storage.save_card(card)
-        except LeetCodeError as e:
-            rprint(f"[red]{e}[/red]")
-            raise typer.Exit(1)
-
-    # Run test
-    with console.status("[bold cyan]Running tests...[/bold cyan]"):
-        try:
-            result = service.test_solution(title_slug, question_id, code, language)
-        except LeetCodeError as e:
-            rprint(f"[red]{e}[/red]")
-            raise typer.Exit(1)
-
-    # Display results
-    if result.passed:
-        rprint(f"[green]PASSED[/green] ({result.passed_cases}/{result.total_cases} test cases)")
-    else:
-        rprint(f"[red]FAILED[/red] ({result.passed_cases}/{result.total_cases} test cases)")
-        if result.runtime_error:
-            rprint(f"[red]Runtime error:[/red] {result.runtime_error}")
-        if result.compile_error:
-            rprint(f"[red]Compile error:[/red] {result.compile_error}")
-        if result.expected and result.actual:
-            rprint(f"[dim]Expected: {result.expected}[/dim]")
-            rprint(f"[dim]Actual:   {result.actual}[/dim]")
 
 
 # ============================================================================
@@ -321,6 +239,30 @@ def submit(
 # SET-SOLUTION command
 # ============================================================================
 
+# Reverse map: LeetCode slug → file extension (for editor temp files)
+_SLUG_TO_EXT: dict[str, str] = {}
+
+
+def _get_slug_to_ext() -> dict[str, str]:
+    """Build reverse map from LeetCode language slug to file extension (lazy)."""
+    if not _SLUG_TO_EXT:
+        from aletheia.leetcode.service import _EXTENSION_MAP
+
+        for ext, slug in _EXTENSION_MAP.items():
+            _SLUG_TO_EXT.setdefault(slug, ext)
+    return _SLUG_TO_EXT
+
+
+def _format_as_comment(text: str, language: str) -> str:
+    """Wrap text as a block comment in the given language."""
+    lines = text.splitlines()
+    # Hash-style comments
+    if language in ("python3", "ruby"):
+        return "\n".join(f"# {line}" if line.strip() else "#" for line in lines)
+    # Block-style comments
+    commented = "\n".join(f" * {line}" if line.strip() else " *" for line in lines)
+    return f"/*\n{commented}\n */"
+
 
 @leetcode_app.command("set-solution")
 def set_solution(
@@ -355,14 +297,24 @@ def set_solution(
         # Open editor
         existing = card.code_solution or ""
         editor = os.environ.get("EDITOR", os.environ.get("VISUAL", "vim"))
-        suffix = ".py"  # Default to python
 
-        if language:
-            ext_map = {"python3": ".py", "cpp": ".cpp", "java": ".java", "javascript": ".js"}
-            suffix = ext_map.get(language, ".py")
+        # Determine language slug and file extension
+        lang_slug = language
+        if not lang_slug and card.problem_source and card.problem_source.language:
+            lang_slug = card.problem_source.language
+        slug_to_ext = _get_slug_to_ext()
+        suffix = slug_to_ext.get(lang_slug, ".py") if lang_slug else ".py"
+
+        # Determine initial editor content
+        is_file_path = existing.endswith(tuple(slug_to_ext.values()))
+        initial_content = existing if existing and not is_file_path else ""
+
+        # If no existing code, try to fetch problem description + starter code
+        if not initial_content:
+            initial_content = _fetch_editor_content(card, lang_slug or "python3")
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=suffix, delete=False) as f:
-            f.write(existing if not existing.endswith(tuple(".py .cpp .java .js".split())) else "")
+            f.write(initial_content)
             f.flush()
             temp_path = f.name
 
@@ -389,6 +341,38 @@ def set_solution(
 
     storage.save_card(card)
     rprint(f"[green]Card updated:[/green] {card.id[:8]}")
+
+
+def _fetch_editor_content(card: "DSAProblemCard", lang_slug: str) -> str:
+    """Best-effort fetch of problem description + starter code from LeetCode.
+
+    Returns the formatted content or empty string on any failure.
+    """
+    try:
+        from aletheia.leetcode.auth import get_credentials
+        from aletheia.leetcode.service import LeetCodeService
+
+        state_dir = _get_state_dir()
+        creds = get_credentials(state_dir)
+        if creds is None:
+            return ""
+
+        title_slug = _get_title_slug(card)
+        service = LeetCodeService(creds)
+        detail = service.get_problem_detail(title_slug)
+    except Exception:
+        return ""
+
+    parts: list[str] = []
+    if detail.content_text:
+        parts.append(_format_as_comment(detail.content_text, lang_slug))
+        parts.append("")  # blank line separator
+
+    snippet = detail.code_snippets.get(lang_slug, "")
+    if snippet:
+        parts.append(snippet)
+
+    return "\n".join(parts)
 
 
 # ============================================================================

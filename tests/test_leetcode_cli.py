@@ -330,3 +330,65 @@ class TestSetSolution:
         assert result.exit_code == 0
         updated = storage.load_card(card.id)
         assert "def solve()" in updated.code_solution
+
+    def test_set_solution_editor_with_api_fetch(self, env_and_storage):
+        """Test editor is pre-populated with problem description + starter code."""
+        from aletheia.leetcode.service import ProblemDetail
+
+        storage, state_dir = env_and_storage
+        card = _save_test_card(storage, code_solution=None)
+
+        # Save credentials so the fetch path is reached
+        creds = LeetCodeCredentials(
+            csrftoken="c", leetcode_session="s", username="u", stored_at="now"
+        )
+        save_credentials(state_dir, creds)
+
+        detail = ProblemDetail(
+            content_html="<p>Given an array</p>",
+            content_text="Given an array",
+            code_snippets={"python3": "class Solution:\n    def trap(self):"},
+        )
+
+        mock_service = MagicMock()
+        mock_service.get_problem_detail.return_value = detail
+
+        editor_content = {}
+
+        def mock_editor(args, check=False):
+            # Read what was written to the temp file, then write final code
+            with open(args[1]) as f:
+                editor_content["initial"] = f.read()
+            with open(args[1], "w") as f:
+                f.write("class Solution:\n    def trap(self): return 0")
+
+        with (
+            patch(f"{_SVC}.LeetCodeService", return_value=mock_service),
+            patch("aletheia.cli.leetcode.subprocess.run", side_effect=mock_editor),
+        ):
+            result = runner.invoke(app, ["leetcode", "set-solution", card.id[:8]])
+
+        assert result.exit_code == 0
+        # Verify the editor was pre-populated with description comment + starter code
+        initial = editor_content["initial"]
+        assert "Given an array" in initial
+        assert "class Solution:" in initial
+        assert "def trap" in initial
+
+    def test_set_solution_editor_no_creds_still_works(self, env_and_storage):
+        """Test editor works gracefully when not logged in (no API fetch)."""
+        storage, state_dir = env_and_storage
+        card = _save_test_card(storage, code_solution=None)
+
+        # No credentials saved — fetch should silently fail
+
+        def mock_editor(args, check=False):
+            with open(args[1], "w") as f:
+                f.write("class Solution:\n    def trap(self): return 0")
+
+        with patch("aletheia.cli.leetcode.subprocess.run", side_effect=mock_editor):
+            result = runner.invoke(app, ["leetcode", "set-solution", card.id[:8]])
+
+        assert result.exit_code == 0
+        updated = storage.load_card(card.id)
+        assert "class Solution:" in updated.code_solution

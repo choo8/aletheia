@@ -18,6 +18,7 @@ from aletheia.leetcode.service import (
     LeetCodeError,
     LeetCodeService,
     SubmissionStatus,
+    _html_to_text,
     resolve_code_solution,
     resolve_language,
 )
@@ -525,3 +526,97 @@ class TestResolveLanguage:
             code_solution="solution.java",
         )
         assert resolve_language(card) == "java"
+
+
+class TestHtmlToText:
+    """Tests for _html_to_text helper."""
+
+    def test_paragraphs(self):
+        """Test paragraph tags become newlines."""
+        html = "<p>First paragraph.</p><p>Second paragraph.</p>"
+        text = _html_to_text(html)
+        assert "First paragraph." in text
+        assert "Second paragraph." in text
+        # Paragraphs should be on separate lines
+        assert "\n" in text
+
+    def test_list_items(self):
+        """Test list items get bullet prefixes."""
+        html = "<ul><li>one</li><li>two</li></ul>"
+        text = _html_to_text(html)
+        assert "- one" in text
+        assert "- two" in text
+
+    def test_html_entities(self):
+        """Test HTML entities are decoded."""
+        html = "<p>a &lt; b &amp; c &gt; d</p>"
+        text = _html_to_text(html)
+        assert "a < b & c > d" in text
+
+    def test_numeric_entities(self):
+        """Test numeric character references are decoded."""
+        html = "<p>&#60;tag&#62;</p>"
+        text = _html_to_text(html)
+        assert "<tag>" in text
+
+    def test_empty_input(self):
+        """Test empty/falsy input returns empty string."""
+        assert _html_to_text("") == ""
+        assert _html_to_text(None) == ""
+
+    def test_br_tags(self):
+        """Test <br> tags become newlines."""
+        html = "line one<br>line two"
+        text = _html_to_text(html)
+        assert "line one" in text
+        assert "line two" in text
+
+
+class TestProblemDetail:
+    """Tests for get_problem_detail."""
+
+    def test_success(self):
+        """Test successful fetch of problem detail."""
+        service = _make_service()
+        service._api.graphql_post.return_value = SimpleNamespace(
+            data=SimpleNamespace(
+                question=SimpleNamespace(
+                    content="<p>Given an array...</p>",
+                    code_snippets=[
+                        SimpleNamespace(
+                            lang_slug="python3",
+                            code="class Solution:\n    def twoSum(self, nums, target):",
+                        ),
+                        SimpleNamespace(
+                            lang_slug="cpp",
+                            code="class Solution {\npublic:\n};",
+                        ),
+                    ],
+                )
+            )
+        )
+
+        detail = service.get_problem_detail("two-sum")
+        assert "Given an array" in detail.content_html
+        assert "Given an array" in detail.content_text
+        assert "python3" in detail.code_snippets
+        assert "cpp" in detail.code_snippets
+        assert "twoSum" in detail.code_snippets["python3"]
+
+    def test_not_found(self):
+        """Test error when problem slug is invalid."""
+        service = _make_service()
+        service._api.graphql_post.return_value = SimpleNamespace(
+            data=SimpleNamespace(question=None)
+        )
+
+        with pytest.raises(LeetCodeError, match="not found"):
+            service.get_problem_detail("nonexistent-problem")
+
+    def test_api_error(self):
+        """Test error when API call fails."""
+        service = _make_service()
+        service._api.graphql_post.side_effect = RuntimeError("network error")
+
+        with pytest.raises(LeetCodeError, match="Failed to fetch"):
+            service.get_problem_detail("two-sum")

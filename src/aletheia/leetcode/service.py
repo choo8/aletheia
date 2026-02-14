@@ -2,8 +2,9 @@
 
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
+from html.parser import HTMLParser
 from pathlib import Path
 
 from aletheia.leetcode.auth import LeetCodeCredentials
@@ -56,6 +57,69 @@ class SubmissionResult:
     total_cases: int | None = None
     passed_cases: int | None = None
     error_message: str | None = None
+
+
+@dataclass
+class ProblemDetail:
+    """Problem description and starter code from LeetCode."""
+
+    content_html: str
+    content_text: str
+    code_snippets: dict[str, str] = field(default_factory=dict)
+
+
+class _HTMLToTextParser(HTMLParser):
+    """Simple HTML-to-text converter using stdlib."""
+
+    def __init__(self):
+        super().__init__()
+        self._pieces: list[str] = []
+        self._skip = False
+
+    def handle_starttag(self, tag: str, attrs):
+        if tag in ("p", "br"):
+            self._pieces.append("\n")
+        elif tag == "li":
+            self._pieces.append("\n- ")
+        elif tag in ("script", "style"):
+            self._skip = True
+
+    def handle_endtag(self, tag: str):
+        if tag in ("p", "div", "ul", "ol"):
+            self._pieces.append("\n")
+        elif tag in ("script", "style"):
+            self._skip = False
+
+    def handle_data(self, data: str):
+        if not self._skip:
+            self._pieces.append(data)
+
+    def handle_entityref(self, name: str):
+        from html import unescape
+
+        self._pieces.append(unescape(f"&{name};"))
+
+    def handle_charref(self, name: str):
+        from html import unescape
+
+        self._pieces.append(unescape(f"&#{name};"))
+
+    def get_text(self) -> str:
+        import re
+
+        text = "".join(self._pieces)
+        # Collapse runs of 3+ newlines into 2
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        return text.strip()
+
+
+def _html_to_text(html: str) -> str:
+    """Convert HTML to plain text using stdlib HTMLParser."""
+    if not html:
+        return ""
+    parser = _HTMLToTextParser()
+    parser.feed(html)
+    return parser.get_text()
 
 
 # Language aliases → LeetCode slug
@@ -201,6 +265,60 @@ class LeetCodeService:
             pass
 
         raise LeetCodeError(f"Problem #{frontend_id} not found on LeetCode")
+
+    def get_problem_detail(self, title_slug: str) -> ProblemDetail:
+        """Fetch problem description and starter code snippets.
+
+        Args:
+            title_slug: Problem URL slug (e.g., "two-sum")
+
+        Returns:
+            ProblemDetail with HTML content, plain-text content, and code
+            snippets keyed by LeetCode language slug.
+
+        Raises LeetCodeError if the problem is not found or API fails.
+        """
+        import leetcode
+
+        query = leetcode.GraphqlQuery(
+            query="""
+            query questionDetail($titleSlug: String!) {
+                question(titleSlug: $titleSlug) {
+                    content
+                    codeSnippets {
+                        langSlug
+                        code
+                    }
+                }
+            }
+            """,
+            variables={"titleSlug": title_slug},
+        )
+
+        try:
+            response = self._api.graphql_post(body=query)
+        except Exception as e:
+            raise LeetCodeError(f"Failed to fetch problem detail: {e}") from e
+
+        question = getattr(getattr(response, "data", None), "question", None)
+        if question is None:
+            raise LeetCodeError(f"Problem not found: {title_slug}")
+
+        content_html = getattr(question, "content", "") or ""
+        code_snippets_raw = getattr(question, "code_snippets", None) or []
+
+        snippets: dict[str, str] = {}
+        for snippet in code_snippets_raw:
+            lang_slug = getattr(snippet, "lang_slug", None)
+            code = getattr(snippet, "code", None)
+            if lang_slug and code:
+                snippets[lang_slug] = code
+
+        return ProblemDetail(
+            content_html=content_html,
+            content_text=_html_to_text(content_html),
+            code_snippets=snippets,
+        )
 
     def test_solution(
         self,

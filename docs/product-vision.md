@@ -459,16 +459,15 @@ Research Insight Card (atomic, reviewable):
 - **Interleaved Practice**: Mix cards across topics to strengthen connections (research suggests better transfer)
 - **Mnemonic Medium**: Embed prompts in narrative context (Andy Matuschak's approach)
 
-### Leetcode Integration (Roadmap Item)
+### Leetcode Integration (Implemented)
 
-**Research findings**: No official Leetcode API exists, but undocumented GraphQL endpoints are available. Several CLI tools (leetgo, leetcode-cli) wrap these APIs. Requires session cookies for authentication.
+**Research findings**: No official Leetcode API exists, but undocumented GraphQL endpoints are available. The `python-leetcode` package wraps these APIs. Requires session cookies for authentication.
 
-**Decision**: Defer to post-MVP. For MVP, use local test cases or manual verification.
-
-**Future implementation options**:
-- Integrate with `leetgo` CLI (Go) or `leetcode-cli` (Node.js)
-- Direct GraphQL calls with rate limiting
-- Browser extension that syncs with Aletheia
+**Implementation**: Direct GraphQL calls via `python-leetcode` library. CLI commands:
+- `aletheia leetcode login` — browser cookie extraction (via `rookiepy`) with manual paste fallback
+- `aletheia leetcode status` — check login status and session validity
+- `aletheia leetcode set-solution <card-id>` — editor auto-fetches problem description + starter code from LeetCode API; or set from file with `--file`
+- `aletheia leetcode submit <card-id>` — test-first safety check + full submission
 
 **Risks**: Undocumented APIs may break without notice. Personal use with rate limiting is low risk.
 
@@ -516,7 +515,6 @@ A working end-to-end flow for DSA and System Design knowledge capture and review
 
 - Math card clusters (requires LaTeX rendering polish)
 - Research paper cards
-- Leetcode API integration for code verification
 - LLM-assisted link discovery (automatic connection suggestions)
 - Card creation Mode 2 (Angle Suggester) and Mode 3 (Draft + Critique)
 - Card split/merge operations (advanced lifecycle)
