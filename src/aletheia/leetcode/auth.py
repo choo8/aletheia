@@ -79,11 +79,8 @@ def extract_browser_cookies() -> tuple[str, str]:
             "rookiepy not installed. Install with: pip install aletheia[leetcode]"
         ) from e
 
-    try:
-        cookies = rookiepy.to_cookiejar(rookiepy.load(["leetcode.com"]))
-    except Exception as e:
-        raise LeetCodeAuthError(f"Failed to extract browser cookies: {e}") from e
-
+    raw_cookies = _load_browser_cookies(rookiepy)
+    cookies = rookiepy.to_cookiejar(raw_cookies)
     cookie_dict = {c.name: c.value for c in cookies}
 
     csrftoken = cookie_dict.get("csrftoken")
@@ -101,6 +98,46 @@ def extract_browser_cookies() -> tuple[str, str]:
         )
 
     return csrftoken, leetcode_session
+
+
+_BROWSERS = ("chrome", "firefox", "brave", "edge", "chromium", "opera", "vivaldi")
+
+
+def _load_browser_cookies(rookiepy) -> list:  # type: ignore[no-untyped-def]
+    """Load leetcode.com cookies, falling back to per-browser attempts.
+
+    rookiepy.load() silently returns [] when every browser fails
+    (missing DB, decryption error, etc.).  When that happens we retry
+    each browser individually so we can surface the *real* error.
+    """
+    domain = ["leetcode.com"]
+
+    try:
+        raw = rookiepy.load(domain)
+    except Exception as e:
+        raise LeetCodeAuthError(f"Failed to extract browser cookies: {e}") from e
+
+    if raw:
+        return raw
+
+    # load() returned nothing — probe each browser for a real error message.
+    errors: list[str] = []
+    for name in _BROWSERS:
+        fn = getattr(rookiepy, name, None)
+        if fn is None:
+            continue
+        try:
+            result = fn(domain)
+            if result:
+                return result
+        except Exception as e:
+            errors.append(f"{name}: {e}")
+
+    detail = "; ".join(errors) if errors else "no supported browser found"
+    raise LeetCodeAuthError(
+        f"Could not extract cookies from any browser ({detail}). "
+        "Make sure you are logged into leetcode.com."
+    )
 
 
 def clear_credentials(state_dir: Path) -> bool:

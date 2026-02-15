@@ -210,6 +210,49 @@ class TestBrowserExtraction:
             with pytest.raises(LeetCodeAuthError, match="Failed to extract"):
                 extract_browser_cookies()
 
+    def test_fallback_to_individual_browsers(self):
+        """Test per-browser fallback when load() returns empty."""
+        mock_rookiepy = MagicMock()
+        mock_rookiepy.load.return_value = []  # empty — triggers fallback
+        # chrome raises, firefox returns cookies
+        mock_rookiepy.chrome.side_effect = RuntimeError("decrypt failed")
+        mock_rookiepy.firefox.return_value = [{"raw": "data"}]
+        mock_jar = MagicMock()
+        mock_jar.__iter__ = MagicMock(
+            return_value=iter(
+                [
+                    _make_cookie("csrftoken", "c"),
+                    _make_cookie("LEETCODE_SESSION", "s"),
+                ]
+            )
+        )
+        mock_rookiepy.to_cookiejar.return_value = mock_jar
+
+        with patch.dict("sys.modules", {"rookiepy": mock_rookiepy}):
+            csrf, session = extract_browser_cookies()
+        assert csrf == "c"
+        assert session == "s"
+
+    def test_fallback_all_browsers_fail(self):
+        """Test error message when all individual browsers fail."""
+        mock_rookiepy = MagicMock()
+        mock_rookiepy.load.return_value = []
+        mock_rookiepy.chrome.side_effect = RuntimeError("decrypt failed")
+        mock_rookiepy.firefox.side_effect = RuntimeError("no profile")
+        # Missing browser attrs → skipped
+        mock_rookiepy.brave = None
+        mock_rookiepy.edge = None
+        mock_rookiepy.chromium = None
+        mock_rookiepy.opera = None
+        mock_rookiepy.vivaldi = None
+
+        with patch.dict("sys.modules", {"rookiepy": mock_rookiepy}):
+            with pytest.raises(
+                LeetCodeAuthError,
+                match=r"Could not extract cookies.*chrome: decrypt failed.*firefox: no profile",
+            ):
+                extract_browser_cookies()
+
 
 # ============================================================================
 # Service tests
