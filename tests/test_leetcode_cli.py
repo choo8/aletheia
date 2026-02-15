@@ -13,9 +13,9 @@ from typer.testing import CliRunner
 
 runner = CliRunner()
 
-# Patch targets: canonical module paths where auth/service functions live.
-_AUTH = "aletheia.leetcode.auth"
-_SVC = "aletheia.leetcode.service"
+# Patch targets: names are imported at module level in cli.leetcode,
+# so we patch where they're looked up (cli.leetcode), not where they're defined.
+_CLI = "aletheia.cli.leetcode"
 
 
 @pytest.fixture()
@@ -73,11 +73,11 @@ class TestLogin:
 
         with (
             patch(
-                f"{_AUTH}.extract_browser_cookies",
+                f"{_CLI}.extract_browser_cookies",
                 return_value=("csrf123", "session456"),
             ),
-            patch(f"{_SVC}.LeetCodeService", return_value=mock_service),
-            patch(f"{_AUTH}.save_credentials") as mock_save,
+            patch(f"{_CLI}.LeetCodeService", return_value=mock_service),
+            patch(f"{_CLI}.save_credentials") as mock_save,
         ):
             result = runner.invoke(app, ["leetcode", "login"])
 
@@ -94,11 +94,11 @@ class TestLogin:
 
         with (
             patch(
-                f"{_AUTH}.extract_browser_cookies",
+                f"{_CLI}.extract_browser_cookies",
                 side_effect=LeetCodeAuthError("no browser"),
             ),
-            patch(f"{_SVC}.LeetCodeService", return_value=mock_service),
-            patch(f"{_AUTH}.save_credentials"),
+            patch(f"{_CLI}.LeetCodeService", return_value=mock_service),
+            patch(f"{_CLI}.save_credentials"),
         ):
             result = runner.invoke(app, ["leetcode", "login"], input="my_csrf\nmy_session\n")
 
@@ -111,10 +111,10 @@ class TestLogin:
 
         with (
             patch(
-                f"{_AUTH}.extract_browser_cookies",
+                f"{_CLI}.extract_browser_cookies",
                 return_value=("bad_csrf", "bad_session"),
             ),
-            patch(f"{_SVC}.LeetCodeService", side_effect=LeetCodeError("invalid")),
+            patch(f"{_CLI}.LeetCodeService", side_effect=LeetCodeError("invalid")),
         ):
             result = runner.invoke(app, ["leetcode", "login"])
 
@@ -140,7 +140,7 @@ class TestStatus:
         )
         save_credentials(state_dir, creds)
 
-        with patch(f"{_SVC}.LeetCodeService", return_value=mock_service):
+        with patch(f"{_CLI}.LeetCodeService", return_value=mock_service):
             result = runner.invoke(app, ["leetcode", "status"])
 
         assert result.exit_code == 0
@@ -170,7 +170,7 @@ class TestStatus:
         mock_service = MagicMock()
         mock_service.whoami.side_effect = LeetCodeError("expired")
 
-        with patch(f"{_SVC}.LeetCodeService", return_value=mock_service):
+        with patch(f"{_CLI}.LeetCodeService", return_value=mock_service):
             result = runner.invoke(app, ["leetcode", "status"])
 
         assert result.exit_code == 0
@@ -204,7 +204,7 @@ class TestSubmit:
             memory_percentile=70.0,
         )
 
-        with patch(f"{_SVC}.LeetCodeService", return_value=mock_service):
+        with patch(f"{_CLI}.LeetCodeService", return_value=mock_service):
             result = runner.invoke(app, ["leetcode", "submit", card.id[:8]], input="y\n")
 
         assert result.exit_code == 0
@@ -234,7 +234,7 @@ class TestSubmit:
         )
         save_credentials(state_dir, creds)
 
-        with patch(f"{_SVC}.LeetCodeService", return_value=MagicMock()):
+        with patch(f"{_CLI}.LeetCodeService", return_value=MagicMock()):
             result = runner.invoke(app, ["leetcode", "submit", card.id[:8]])
 
         assert result.exit_code == 1
@@ -256,7 +256,7 @@ class TestSubmit:
             passed=False, total_cases=3, passed_cases=1
         )
 
-        with patch(f"{_SVC}.LeetCodeService", return_value=mock_service):
+        with patch(f"{_CLI}.LeetCodeService", return_value=mock_service):
             result = runner.invoke(app, ["leetcode", "submit", card.id[:8]])
 
         assert result.exit_code == 1
@@ -356,7 +356,7 @@ class TestSetSolution:
             return "class Solution:\n    def trap(self): return 0"
 
         with (
-            patch(f"{_SVC}.LeetCodeService", return_value=mock_service),
+            patch(f"{_CLI}.LeetCodeService", return_value=mock_service),
             patch("aletheia.cli.leetcode.open_in_editor", side_effect=mock_open_in_editor),
         ):
             result = runner.invoke(app, ["leetcode", "set-solution", card.id[:8]])

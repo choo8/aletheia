@@ -10,6 +10,20 @@ from rich.console import Console
 
 from aletheia.cli.helpers import find_card, get_storage, open_in_editor
 from aletheia.core.models import DSAProblemCard, LeetcodeSource
+from aletheia.leetcode.auth import (
+    LeetCodeAuthError,
+    LeetCodeCredentials,
+    extract_browser_cookies,
+    get_credentials,
+    save_credentials,
+)
+from aletheia.leetcode.service import (
+    _EXTENSION_MAP,
+    LeetCodeError,
+    LeetCodeService,
+    resolve_code_solution,
+    resolve_language,
+)
 
 console = Console()
 
@@ -33,14 +47,6 @@ def _get_state_dir() -> Path:
 @leetcode_app.command()
 def login() -> None:
     """Authenticate with LeetCode via browser cookies or manual paste."""
-    from aletheia.leetcode.auth import (
-        LeetCodeAuthError,
-        LeetCodeCredentials,
-        extract_browser_cookies,
-        save_credentials,
-    )
-    from aletheia.leetcode.service import LeetCodeError, LeetCodeService
-
     csrftoken = None
     leetcode_session = None
 
@@ -87,9 +93,6 @@ def login() -> None:
 @leetcode_app.command()
 def status() -> None:
     """Check LeetCode login status."""
-    from aletheia.leetcode.auth import get_credentials
-    from aletheia.leetcode.service import LeetCodeError, LeetCodeService
-
     state_dir = _get_state_dir()
     creds = get_credentials(state_dir)
 
@@ -124,14 +127,6 @@ def submit(
     ),
 ) -> None:
     """Submit a card's solution to LeetCode for full judging."""
-    from aletheia.leetcode.auth import get_credentials
-    from aletheia.leetcode.service import (
-        LeetCodeError,
-        LeetCodeService,
-        resolve_code_solution,
-        resolve_language,
-    )
-
     storage = get_storage()
     card = _require_dsa_card(storage, card_id)
 
@@ -238,10 +233,8 @@ _SLUG_TO_EXT: dict[str, str] = {}
 
 
 def _get_slug_to_ext() -> dict[str, str]:
-    """Build reverse map from LeetCode language slug to file extension (lazy)."""
+    """Build reverse map from LeetCode language slug to file extension."""
     if not _SLUG_TO_EXT:
-        from aletheia.leetcode.service import _EXTENSION_MAP
-
         for ext, slug in _EXTENSION_MAP.items():
             _SLUG_TO_EXT.setdefault(slug, ext)
     return _SLUG_TO_EXT
@@ -340,9 +333,6 @@ def _fetch_editor_content(card: "DSAProblemCard", lang_slug: str) -> str:
 
     Returns the formatted content or empty string on any failure.
     """
-    from aletheia.leetcode.auth import get_credentials
-    from aletheia.leetcode.service import LeetCodeService
-
     state_dir = _get_state_dir()
     creds = get_credentials(state_dir)
     if creds is None:
