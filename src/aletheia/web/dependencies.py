@@ -8,6 +8,7 @@ from fastapi.templating import Jinja2Templates
 
 from aletheia.core.scheduler import AletheiaScheduler
 from aletheia.core.storage import AletheiaStorage
+from aletheia.web.katex import setup_katex_filter
 
 
 @lru_cache
@@ -32,8 +33,6 @@ def get_templates() -> Jinja2Templates:
     templates = Jinja2Templates(directory=str(templates_dir))
 
     # Register KaTeX filter for LaTeX rendering
-    from aletheia.web.katex import setup_katex_filter
-
     setup_katex_filter(templates)
 
     return templates

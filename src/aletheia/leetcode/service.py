@@ -1,9 +1,12 @@
 """LeetCode API service — test and submit solutions."""
 
+import json
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from enum import StrEnum
+from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -96,18 +99,12 @@ class _HTMLToTextParser(HTMLParser):
             self._pieces.append(data)
 
     def handle_entityref(self, name: str):
-        from html import unescape
-
         self._pieces.append(unescape(f"&{name};"))
 
     def handle_charref(self, name: str):
-        from html import unescape
-
         self._pieces.append(unescape(f"&#{name};"))
 
     def get_text(self) -> str:
-        import re
-
         text = "".join(self._pieces)
         # Collapse runs of 3+ newlines into 2
         text = re.sub(r"\n{3,}", "\n\n", text)
@@ -231,8 +228,6 @@ class LeetCodeService:
 
         Raises LeetCodeError if the problem is not found.
         """
-        import json
-
         import leetcode
 
         # Prefer direct lookup by title_slug — deterministic and reliable
@@ -314,8 +309,6 @@ class LeetCodeService:
 
         Raises LeetCodeError if the problem is not found or API fails.
         """
-        import json
-
         import leetcode
 
         query = leetcode.GraphqlQuery(
@@ -380,8 +373,6 @@ class LeetCodeService:
             language: LeetCode language slug (e.g., "python3")
             data_input: Custom test input (uses default if empty)
         """
-        import json
-
         # Fetch default sample test cases when none provided
         if not data_input:
             try:
@@ -430,8 +421,6 @@ class LeetCodeService:
             code: Solution source code
             language: LeetCode language slug (e.g., "python3")
         """
-        import json
-
         # Use a raw dict to avoid model quirks (same pattern as test_solution)
         body = {
             "judge_type": "large",
@@ -461,8 +450,6 @@ class LeetCodeService:
 
         Returns the raw result dict. Raises LeetCodeError on timeout.
         """
-        import json
-
         delay = 1.0
         elapsed = 0.0
 
