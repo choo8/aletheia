@@ -2,9 +2,6 @@
 
 import json
 import os
-import shlex
-import subprocess
-import tempfile
 from pathlib import Path
 
 import typer
@@ -14,6 +11,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from aletheia.cli.helpers import find_card, get_storage, open_in_editor
 from aletheia.cli.leetcode import leetcode_app
 from aletheia.core.git_sync import GitSyncError, init_data_repo, pull_data_repo, sync_data_repo
 from aletheia.core.models import (
@@ -45,19 +43,6 @@ app = typer.Typer(
 app.add_typer(leetcode_app, name="leetcode")
 console = Console()
 
-# Global storage instance (initialized lazily)
-_storage: AletheiaStorage | None = None
-
-
-def get_storage() -> AletheiaStorage:
-    """Get or create the storage instance."""
-    global _storage
-    if _storage is None:
-        data_dir = Path(os.environ.get("ALETHEIA_DATA_DIR", Path.cwd() / "data"))
-        state_dir = Path(os.environ.get("ALETHEIA_STATE_DIR", Path.cwd() / ".aletheia"))
-        _storage = AletheiaStorage(data_dir, state_dir)
-    return _storage
-
 
 def prompt_or_editor(label: str, default: str = "", required: bool = True) -> str:
     """Prompt for input, opening $EDITOR if the user types 'e'.
@@ -75,34 +60,6 @@ def prompt_or_editor(label: str, default: str = "", required: bool = True) -> st
             raise typer.Exit(1)
 
     return value
-
-
-def _editor_cmd() -> list[str]:
-    """Build the editor command, adding --wait for GUI editors that need it."""
-    raw = os.environ.get("EDITOR", os.environ.get("VISUAL", "vim"))
-    cmd = shlex.split(raw)
-    # GUI editors that return immediately without --wait
-    gui_editors = {"code", "code-insiders", "subl", "atom", "zed"}
-    if cmd and cmd[0] in gui_editors and "--wait" not in cmd and "-w" not in cmd:
-        cmd.append("--wait")
-    return cmd
-
-
-def open_in_editor(content: str, suffix: str = ".yaml") -> str:
-    """Open content in the user's editor and return the edited content."""
-    cmd = _editor_cmd()
-
-    with tempfile.NamedTemporaryFile(mode="w", suffix=suffix, delete=False) as f:
-        f.write(content)
-        f.flush()
-        temp_path = f.name
-
-    try:
-        subprocess.run([*cmd, temp_path], check=True)
-        with open(temp_path) as f:
-            return f.read()
-    finally:
-        os.unlink(temp_path)
 
 
 # ============================================================================
@@ -548,31 +505,9 @@ def show(
     _display_card(card, full=True)
 
 
-def _find_card(storage: AletheiaStorage, card_id: str):
-    """Find a card by full or partial ID."""
-    # Try exact match first
-    card = storage.load_card(card_id)
-    if card:
-        return card
-
-    # Try partial match
-    all_cards = storage.list_cards()
-    matches = [c for c in all_cards if c.id.startswith(card_id)]
-
-    if len(matches) == 1:
-        return matches[0]
-    elif len(matches) > 1:
-        rprint(f"[yellow]Multiple cards match '{card_id}':[/yellow]")
-        for c in matches:
-            rprint(f"  {c.id[:8]}: {c.front[:40]}...")
-        return None
-
-    return None
-
-
 def _require_card(storage: AletheiaStorage, card_id: str) -> AnyCard:
     """Find a card by ID or exit with an error."""
-    card = _find_card(storage, card_id)
+    card = find_card(storage, card_id)
     if card is None:
         rprint(f"[red]Card not found: {card_id}[/red]")
         raise typer.Exit(1)
