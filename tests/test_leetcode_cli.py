@@ -13,8 +13,7 @@ from typer.testing import CliRunner
 
 runner = CliRunner()
 
-# Patch targets: these are the canonical module paths where the functions live.
-# The CLI imports them lazily inside functions, so we patch at source.
+# Patch targets: canonical module paths where auth/service functions live.
 _AUTH = "aletheia.leetcode.auth"
 _SVC = "aletheia.leetcode.service"
 
@@ -33,13 +32,13 @@ def env_and_storage(tmp_path: Path):
     }
 
     with patch.dict("os.environ", env, clear=False):
-        import aletheia.cli.main as cli_mod
+        import aletheia.cli.helpers as helpers_mod
 
         # Reset the global storage so it gets recreated with our temp dirs
-        cli_mod._storage = None
-        storage = cli_mod.get_storage()
+        helpers_mod._storage = None
+        storage = helpers_mod.get_storage()
         yield storage, state_dir
-        cli_mod._storage = None
+        helpers_mod._storage = None
 
 
 def _save_test_card(storage: AletheiaStorage, **overrides) -> DSAProblemCard:
@@ -319,7 +318,7 @@ class TestSetSolution:
         card = _save_test_card(storage)
 
         with patch(
-            "aletheia.cli.main.open_in_editor",
+            "aletheia.cli.leetcode.open_in_editor",
             return_value="def solve(): return 42",
         ):
             result = runner.invoke(app, ["leetcode", "set-solution", card.id[:8]])
@@ -358,7 +357,7 @@ class TestSetSolution:
 
         with (
             patch(f"{_SVC}.LeetCodeService", return_value=mock_service),
-            patch("aletheia.cli.main.open_in_editor", side_effect=mock_open_in_editor),
+            patch("aletheia.cli.leetcode.open_in_editor", side_effect=mock_open_in_editor),
         ):
             result = runner.invoke(app, ["leetcode", "set-solution", card.id[:8]])
 
@@ -377,7 +376,7 @@ class TestSetSolution:
         # No credentials saved — fetch should silently fail
 
         with patch(
-            "aletheia.cli.main.open_in_editor",
+            "aletheia.cli.leetcode.open_in_editor",
             return_value="class Solution:\n    def trap(self): return 0",
         ):
             result = runner.invoke(app, ["leetcode", "set-solution", card.id[:8]])

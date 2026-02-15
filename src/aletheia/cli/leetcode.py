@@ -8,6 +8,7 @@ import typer
 from rich import print as rprint
 from rich.console import Console
 
+from aletheia.cli.helpers import find_card, get_storage, open_in_editor
 from aletheia.core.models import DSAProblemCard, LeetcodeSource
 
 console = Console()
@@ -22,13 +23,6 @@ leetcode_app = typer.Typer(
 def _get_state_dir() -> Path:
     """Get the state directory path."""
     return Path(os.environ.get("ALETHEIA_STATE_DIR", Path.cwd() / ".aletheia"))
-
-
-def _get_storage():
-    """Get the storage instance (lazy import to avoid circular deps)."""
-    from aletheia.cli.main import get_storage
-
-    return get_storage()
 
 
 # ============================================================================
@@ -138,7 +132,7 @@ def submit(
         resolve_language,
     )
 
-    storage = _get_storage()
+    storage = get_storage()
     card = _require_dsa_card(storage, card_id)
 
     if not card.problem_source:
@@ -282,7 +276,7 @@ def set_solution(
     ),
 ) -> None:
     """Set or update the code solution for a DSA problem card."""
-    storage = _get_storage()
+    storage = get_storage()
     card = _require_dsa_card(storage, card_id)
 
     # Resolve language slug: explicit flag > card's existing language > python3
@@ -300,8 +294,6 @@ def set_solution(
         rprint(f"[dim]Solution set to file: {path.resolve()}[/dim]")
     else:
         # Open editor — default to python3 when no language is known
-        from aletheia.cli.main import open_in_editor
-
         if not lang_slug:
             lang_slug = "python3"
 
@@ -389,9 +381,7 @@ def _fetch_editor_content(card: "DSAProblemCard", lang_slug: str) -> str:
 
 def _require_dsa_card(storage, card_id: str) -> DSAProblemCard:
     """Find a DSA problem card by ID or exit with error."""
-    from aletheia.cli.main import _find_card
-
-    card = _find_card(storage, card_id)
+    card = find_card(storage, card_id)
     if card is None:
         rprint(f"[red]Card not found: {card_id}[/red]")
         raise typer.Exit(1)
