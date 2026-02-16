@@ -709,7 +709,7 @@ aletheia edit --search "query"     # Search and edit
 aletheia list                      # List all cards
 aletheia list --domain dsa         # Filter by domain
 aletheia list --tag "#graphs"      # Filter by tag
-aletheia show <card-id>            # Display card details
+aletheia show <card-id>            # Display card details + next review date
 
 # Card Lifecycle
 aletheia reformulate <card-id>     # Replace with improved version

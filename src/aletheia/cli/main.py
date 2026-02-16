@@ -2,6 +2,7 @@
 
 import json
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 
 import typer
@@ -499,10 +500,11 @@ def list_cards(
 def show(
     card_id: str = typer.Argument(..., help="Card ID (or partial ID)"),
 ) -> None:
-    """Show details of a specific card."""
+    """Show details of a specific card, including FSRS review scheduling info."""
     storage = get_storage()
     card = _require_card(storage, card_id)
-    _display_card(card, full=True)
+    review_state = storage.db.get_card_state(card.id)
+    _display_card(card, full=True, review_state=review_state)
 
 
 def _require_card(storage: AletheiaStorage, card_id: str) -> AnyCard:
@@ -522,8 +524,16 @@ def _exhaust_card(storage: AletheiaStorage, card, reason: str) -> None:
     storage.save_card(card)
 
 
-def _display_card(card, full: bool = False) -> None:
-    """Display a card in a formatted panel."""
+def _display_card(card, full: bool = False, review_state: dict | None = None) -> None:
+    """Display a card in a formatted panel.
+
+    Args:
+        card: The card to display.
+        full: If True, show all metadata (ID, maturity, tags, etc.).
+        review_state: Optional FSRS state dict from ReviewDatabase.get_card_state().
+            When provided and ``full`` is True, displays the next review date,
+            review state, and review count.
+    """
     name = getattr(card, "name", None)
     title = f"{card.type.value}: {name}" if name else card.type.value
 
@@ -550,7 +560,59 @@ def _display_card(card, full: bool = False) -> None:
         if hasattr(card, "intuition") and card.intuition:
             content += f"\n\n[bold]Intuition:[/bold] {card.intuition}"
 
+        # FSRS review scheduling info
+        content += _format_review_info(review_state)
+
     console.print(Panel(content, title=title, border_style="blue"))
+
+
+def _format_review_info(review_state: dict | None) -> str:
+    """Format FSRS review state as a string for display.
+
+    Args:
+        review_state: FSRS state dict from ReviewDatabase.get_card_state(),
+            or None for cards that have never been reviewed.
+
+    Returns:
+        Formatted string with review scheduling details, prefixed with
+        newlines for panel layout. Empty string if ``review_state`` is None.
+    """
+    if review_state is None:
+        return "\n\n[dim]Next review: new card (not yet reviewed)[/dim]"
+
+    lines: list[str] = []
+
+    due_str = review_state.get("due")
+    if due_str:
+        due = datetime.fromisoformat(due_str)
+        if due.tzinfo is None:
+            due = due.replace(tzinfo=UTC)
+        now = datetime.now(UTC)
+        delta = due - now
+
+        due_display = due.strftime("%Y-%m-%d %H:%M")
+        if delta.total_seconds() <= 0:
+            lines.append(
+                f"[dim]Next review: [bold yellow]{due_display} (overdue)[/bold yellow][/dim]"
+            )
+        elif delta.days == 0:
+            hours = int(delta.total_seconds() // 3600)
+            if hours == 0:
+                mins = int(delta.total_seconds() // 60)
+                lines.append(f"[dim]Next review: {due_display} (in {mins}m)[/dim]")
+            else:
+                lines.append(f"[dim]Next review: {due_display} (in {hours}h)[/dim]")
+        elif delta.days == 1:
+            lines.append(f"[dim]Next review: {due_display} (tomorrow)[/dim]")
+        else:
+            lines.append(f"[dim]Next review: {due_display} (in {delta.days} days)[/dim]")
+
+    state = review_state.get("state", "unknown")
+    reps = review_state.get("reps", 0)
+    lapses = review_state.get("lapses", 0)
+    lines.append(f"[dim]State: {state} | Reviews: {reps} | Lapses: {lapses}[/dim]")
+
+    return "\n\n" + "\n".join(lines) if lines else ""
 
 
 # ============================================================================
