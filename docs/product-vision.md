@@ -252,6 +252,7 @@ The card creation system should be a **separate module** that:
    - `prerequisite`: Must understand X before Y
    - `applies`: Concept X is used in Problem Y
    - `contrasts_with`: Compare/contrast relationship
+   - `encompasses`: Weighted link — reviewing card A implicitly reviews card B (for FIRe credit propagation)
 
 ---
 
@@ -456,7 +457,7 @@ Research Insight Card (atomic, reviewable):
 ### Future Enhancements (Post-MVP)
 
 - **FSRS Optimizer**: Train personalized parameters once we have 1,000+ reviews
-- **Interleaved Practice**: Mix cards across topics to strengthen connections (research suggests better transfer)
+- ~~**Interleaved Practice**~~ ✓ Implemented in Phase 6 via QueueBuilder taxonomy-based interleaving
 - **Mnemonic Medium**: Embed prompts in narrative context (Andy Matuschak's approach)
 
 ### Leetcode Integration (Implemented)
@@ -515,14 +516,14 @@ A working end-to-end flow for DSA and System Design knowledge capture and review
 
 - Math card clusters (requires LaTeX rendering polish)
 - Research paper cards
-- LLM-assisted link discovery (automatic connection suggestions)
+- ~~LLM-assisted link discovery~~ ✓ Implemented in Phase 6 (`aletheia links suggest`)
 - Card creation Mode 2 (Angle Suggester) and Mode 3 (Draft + Critique)
-- Card split/merge operations (advanced lifecycle)
+- ~~Card split/merge operations~~ ✓ Implemented in Phase 4a
 - Automatic GitHub sync
 - Interview preparation mode / study plans
-- Progress analytics and visualizations
+- ~~Progress analytics and visualizations~~ ✓ Implemented in Phase 4c + Phase 6 (learning velocity, mastery %, automaticity)
 - Multi-device real-time sync
-- Interleaved practice scheduling
+- ~~Interleaved practice scheduling~~ ✓ Implemented in Phase 6 (QueueBuilder taxonomy-based interleaving)
 - FSRS optimizer (requires 1,000+ reviews)
 
 ### MVP Success Criteria
@@ -559,10 +560,12 @@ A working end-to-end flow for DSA and System Design knowledge capture and review
    - Phase 1: Core foundation (models, storage, basic CLI) ✓
    - Phase 2: Review system (FSRS, web UI, KaTeX) ✓
    - Phase 3: LLM integration (litellm, Mode 1 & 4) ✓
-   - Phase 4a: Card lifecycle (suspend, resume, exhaust, reformulate, split, merge) ← Next
-   - Phase 4b: Search (SQLite FTS5)
-   - Phase 4c: Statistics dashboard
-   - Phase 4d: Polish (mobile responsive, git sync)
+   - Phase 4a: Card lifecycle (suspend, resume, exhaust, reformulate, split, merge) ✓
+   - Phase 4b: Search (SQLite FTS5) ✓
+   - Phase 4c: Statistics dashboard ✓
+   - Phase 4d: Polish (mobile responsive, git sync) ✓
+   - Phase 5: LeetCode integration ✓
+   - Phase 6: Knowledge graph, smart scheduling & FIRe ✓
 
 ---
 

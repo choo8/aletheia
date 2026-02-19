@@ -35,6 +35,10 @@ This document describes the technical architecture for Aletheia, a personal know
 │  │  │   Card     │  │   FSRS     │  │   Index    │      │      │
 │  │  │  Storage   │  │  Scheduler │  │  & Search  │      │      │
 │  │  └────────────┘  └────────────┘  └────────────┘      │      │
+│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐      │      │
+│  │  │ Knowledge  │  │   Queue    │  │    FIRe    │      │      │
+│  │  │   Graph    │  │  Builder   │  │   Engine   │      │      │
+│  │  └────────────┘  └────────────┘  └────────────┘      │      │
 │  └──────────────────────────────────────────────────────┘      │
 │                             │                                   │
 │                             ▼                                   │
@@ -149,7 +153,19 @@ All cards share common fields:
         "prerequisite": { "type": "array", "items": { "type": "string" } },
         "leads_to": { "type": "array", "items": { "type": "string" } },
         "applies": { "type": "array", "items": { "type": "string" } },
-        "contrasts_with": { "type": "array", "items": { "type": "string" } }
+        "contrasts_with": { "type": "array", "items": { "type": "string" } },
+        "encompasses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "card_id": { "type": "string" },
+              "weight": { "type": "number", "minimum": 0.0, "maximum": 1.0, "default": 1.0 }
+            },
+            "required": ["card_id"]
+          },
+          "description": "Weighted links to cards this card encompasses (for FIRe credit propagation)"
+        }
       }
     },
     "sources": {
@@ -175,6 +191,7 @@ All cards share common fields:
 ```json
 {
   "type": "dsa-problem",
+  "card_subtype": "understanding",
   "problem_source": {
     "platform": "leetcode",
     "id": "42",
@@ -193,6 +210,12 @@ All cards share common fields:
   "code_solution": "path/to/solution.py or inline"
 }
 ```
+
+**DSA Problem Subtypes** (new in Phase 6):
+- `understanding` — Tests conceptual understanding (why/when to use an approach)
+- `implementation` — Tests coding ability (write working code for the approach)
+
+This distinction allows differentiated ratings on LeetCode failures: a student may understand the approach but fail on implementation details, or vice versa.
 
 ### FSRS Card State
 
@@ -250,9 +273,10 @@ Frontend:  HTMX + Jinja2 (server-rendered)
 
 Data Storage:
 ├── Cards:     JSON files (git-tracked, human-readable)
-├── Reviews:   SQLite (time-series queries, statistics)
+├── Reviews:   SQLite (time-series queries, statistics, response times)
 ├── FSRS State: SQLite (frequent updates)
-└── Search:    SQLite FTS5 (full-text search)
+├── Search:    SQLite FTS5 (full-text search)
+└── Implicit Credit: SQLite (FIRe engine credit/penalty tracking)
 ```
 
 **Why this stack:**
@@ -720,7 +744,7 @@ aletheia resume <card-id>          # Resume reviews
 aletheia exhaust <card-id>         # Mark as obsolete
 
 # Review (CLI fallback, main review is web)
-aletheia review                    # Quick CLI review session
+aletheia review                    # Smart review session (QueueBuilder + FIRe)
 aletheia due                       # Show cards due today
 
 # Server
@@ -728,8 +752,21 @@ aletheia serve                     # Start web server for review
 aletheia serve --port 8080         # Custom port
 
 # Statistics
-aletheia stats                     # Review statistics
+aletheia stats                     # Review statistics + learning velocity
 aletheia stats --domain dsa        # Per-domain stats
+
+# Knowledge Graph
+aletheia graph frontier            # Show knowledge frontier (ready-to-learn cards)
+aletheia graph prereqs <card-id>   # Show prerequisite chain
+aletheia graph stats               # Graph statistics (nodes, edges, orphans, depth)
+
+# Link Management
+aletheia links show <card-id>      # Show all links (outgoing + reverse)
+aletheia links add <src> <dst> <type>          # Add link between cards
+aletheia links add <src> <dst> encompasses -w 0.8  # Add weighted encompasses link
+aletheia links remove <src> <dst> <type>       # Remove a link
+aletheia links suggest <card-id>   # LLM-powered link suggestions
+aletheia links health              # Graph health check (orphans, broken links, cycles)
 
 # Quality Check (Mode 4)
 aletheia check <card-id>           # Get LLM feedback on card
@@ -741,6 +778,7 @@ aletheia leetcode status                        # Check login status
 aletheia leetcode set-solution <card-id>        # Editor with problem desc + starter code
 aletheia leetcode set-solution <card-id> -f x.py  # Set solution from file
 aletheia leetcode submit <card-id>              # Test + submit to LeetCode
+aletheia leetcode review-submit <card-id>       # Review + submit with failure classification
 
 # Sync
 aletheia sync                      # Git add, commit, push
@@ -823,6 +861,17 @@ aletheia sync --pull               # Git pull
 - [x] `set-solution` editor auto-fetches problem description + starter code from LeetCode API
 - [x] Graceful degradation when not logged in
 
+### Phase 6: Knowledge Graph, Smart Scheduling & FIRe ✓
+Inspired by Math Academy's approach to mastery-based learning.
+
+- [x] **Knowledge Graph Foundation** — `WeightedLink` model, `encompasses` link type, `KnowledgeGraph` service with transitive prerequisite traversal (BFS), knowledge frontier computation, graph statistics
+- [x] **Smart Scheduling** — `QueueBuilder` with prerequisite-aware filtering, non-interference spacing for similar/contrasting cards, taxonomy-based interleaving, targeted remediation on AGAIN rating
+- [x] **Response Time Tracking** — `response_time_ms` column in review logs, `ProgressMetrics` with mastery percentage, learning velocity, automaticity candidates
+- [x] **LLM-Guided Link Management** — `links` CLI subcommands (show, add, remove, suggest, health), LLM-powered link suggestion with interactive review
+- [x] **FIRe Engine** (Fractional Implicit Repetition) — propagates fractional review credit through encompasses links, greedy set-cover for queue reduction, implicit due-date extension
+- [x] **Implementation Cards** — `DSAProblemSubtype` (understanding vs implementation), LLM failure classification (conceptual/technique/mechanical/trivial), `leetcode review-submit` command with differentiated ratings
+- [x] Comprehensive test coverage (80 new tests, 343 total)
+
 ---
 
 ## File Structure (Detailed)
@@ -857,6 +906,9 @@ aletheia/
 │       ├── cli/
 │       │   ├── __init__.py
 │       │   ├── main.py           # Typer app entry point
+│       │   ├── helpers.py        # Shared CLI helpers (get_storage, find_card)
+│       │   ├── leetcode.py       # LeetCode subcommands (login, submit, review-submit)
+│       │   ├── links.py          # Link management subcommands (show, add, remove, suggest, health)
 │       │   ├── add.py            # Add commands
 │       │   ├── edit.py           # Edit commands
 │       │   └── review.py         # Review commands
@@ -865,6 +917,10 @@ aletheia/
 │       │   ├── models.py         # Pydantic models
 │       │   ├── storage.py        # JSON + SQLite operations
 │       │   ├── scheduler.py      # FSRS wrapper
+│       │   ├── graph.py          # Knowledge graph (prereqs, frontier, encompasses)
+│       │   ├── queue.py          # Smart queue builder (prereq-aware, non-interference, interleaving)
+│       │   ├── fire.py           # FIRe engine (fractional implicit credit)
+│       │   ├── metrics.py        # Progress metrics (mastery, velocity, automaticity)
 │       │   └── search.py         # Full-text search
 │       ├── creation/
 │       │   ├── __init__.py
@@ -903,9 +959,16 @@ aletheia/
 │   ├── test_models.py
 │   ├── test_storage.py
 │   ├── test_scheduler.py
+│   ├── test_graph.py             # Knowledge graph tests (22 tests)
+│   ├── test_queue.py             # Smart queue builder tests (10 tests)
+│   ├── test_fire.py              # FIRe engine tests (14 tests)
+│   ├── test_metrics.py           # Progress metrics tests (13 tests)
+│   ├── test_links.py             # Link management CLI tests (11 tests)
+│   ├── test_implementation_cards.py  # Implementation cards tests (10 tests)
 │   └── test_api.py
 │
 └── docs/
     ├── product-vision.md
-    └── technical-architecture.md
+    ├── technical-architecture.md
+    └── phase-6-implementation.md  # Knowledge graph & FIRe implementation details
 ```
