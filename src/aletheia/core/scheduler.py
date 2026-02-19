@@ -1,14 +1,20 @@
 """FSRS scheduler wrapper for Aletheia."""
 
-from dataclasses import dataclass
+from __future__ import annotations
+
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import IntEnum, StrEnum
+from typing import TYPE_CHECKING
 
 from fsrs import Card as FSRSCard
 from fsrs import Rating, State
 from fsrs import Scheduler as FSRSScheduler
 
 from aletheia.core.storage import ReviewDatabase
+
+if TYPE_CHECKING:
+    from aletheia.core.graph import KnowledgeGraph
 
 
 class ReviewRating(IntEnum):
@@ -34,7 +40,7 @@ class CardState(StrEnum):
     RELEARNING = "relearning"
 
     @classmethod
-    def from_fsrs(cls, state: State) -> "CardState":
+    def from_fsrs(cls, state: State) -> CardState:
         """Convert from FSRS State enum."""
         mapping = {
             State.Learning: cls.LEARNING,
@@ -66,6 +72,7 @@ class ReviewResult:
     stability: float
     difficulty: float
     state: CardState
+    remediation_ids: list[str] = field(default_factory=list)
 
 
 class AletheiaScheduler:
@@ -89,12 +96,18 @@ class AletheiaScheduler:
         """Get card IDs that have never been reviewed."""
         return self.db.get_new_cards(limit)
 
-    def review_card(self, card_id: str, rating: ReviewRating) -> ReviewResult:
+    def review_card(
+        self,
+        card_id: str,
+        rating: ReviewRating,
+        response_time_ms: int | None = None,
+    ) -> ReviewResult:
         """Review a card and update its state.
 
         Args:
             card_id: The card's unique identifier
             rating: User's rating (AGAIN, HARD, GOOD, EASY)
+            response_time_ms: Optional response time in milliseconds
 
         Returns:
             ReviewResult with updated scheduling information
@@ -120,7 +133,7 @@ class AletheiaScheduler:
         self._save_card_state(card_id, reviewed_card, state)
 
         # 6. Log the review
-        self._log_review(card_id, state, reviewed_card, rating.value, now)
+        self._log_review(card_id, state, reviewed_card, rating.value, now, response_time_ms)
 
         # 7. Return result
         return ReviewResult(
@@ -137,6 +150,34 @@ class AletheiaScheduler:
     def get_card_state(self, card_id: str) -> dict | None:
         """Get the current FSRS state for a card."""
         return self.db.get_card_state(card_id)
+
+    def get_remediation_cards(self, failed_card_id: str, graph: KnowledgeGraph) -> list[str]:
+        """Get prerequisite cards that need remediation after a failure.
+
+        On AGAIN: find prerequisite cards that are overdue or have low
+        stability, suggesting the user should review fundamentals.
+        """
+        prereqs = graph.get_prerequisites(failed_card_id)
+        remediation = []
+        now = datetime.now(UTC)
+        for prereq in prereqs:
+            state = self.db.get_card_state(prereq.id)
+            if state is None:
+                continue
+            # Overdue?
+            due_str = state.get("due")
+            if due_str:
+                due = datetime.fromisoformat(due_str)
+                if due.tzinfo is None:
+                    due = due.replace(tzinfo=UTC)
+                if due <= now:
+                    remediation.append(prereq.id)
+                    continue
+            # Low stability?
+            stability = state.get("stability") or 0.0
+            if stability < 5.0 and state.get("state") != "new":
+                remediation.append(prereq.id)
+        return remediation
 
     def _state_to_fsrs_card(self, state: dict | None) -> FSRSCard:
         """Convert DB state to FSRS Card object."""
@@ -198,6 +239,7 @@ class AletheiaScheduler:
         fsrs_card: FSRSCard,
         rating: int,
         reviewed_at: datetime,
+        response_time_ms: int | None = None,
     ) -> None:
         """Log review for FSRS optimizer training."""
         # Calculate elapsed days since last review
@@ -230,4 +272,5 @@ class AletheiaScheduler:
             if state_before
             else CardState.NEW,
             state_after=CardState.from_fsrs(fsrs_card.state),
+            response_time_ms=response_time_ms,
         )

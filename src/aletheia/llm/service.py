@@ -3,12 +3,44 @@
 import json
 import os
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 from aletheia.llm.prompts import (
     get_edit_extraction_prompt,
     get_extraction_prompt,
+    get_link_suggestion_prompt,
     get_quality_prompt,
 )
+
+
+class FailureType(StrEnum):
+    """Types of LeetCode submission failure."""
+
+    CONCEPTUAL = "conceptual"  # wrong approach entirely
+    TECHNIQUE = "technique"  # right approach, wrong technique
+    MECHANICAL = "mechanical"  # right everything, coding bug
+    TRIVIAL = "trivial"  # typo/syntax error
+
+
+@dataclass
+class FailureClassification:
+    """Result of classifying a LeetCode submission failure."""
+
+    failure_type: FailureType
+    explanation: str
+    understanding_rating: int  # suggested rating for understanding card (1-4)
+    implementation_rating: int  # suggested rating for implementation card (1-4)
+
+
+@dataclass
+class LinkSuggestion:
+    """A suggested link between two cards."""
+
+    source_id: str
+    target_id: str
+    link_type: str
+    weight: float | None = None
+    rationale: str = ""
 
 
 @dataclass
@@ -191,6 +223,137 @@ Back (Answer):
                 suggested_front=data.get("suggested_front"),
                 suggested_back=data.get("suggested_back"),
             )
+        except json.JSONDecodeError as e:
+            raise LLMError(f"Failed to parse LLM response as JSON: {e}") from e
+
+    def classify_failure(
+        self,
+        problem_front: str,
+        submitted_code: str,
+        error_message: str,
+    ) -> FailureClassification:
+        """Classify a LeetCode submission failure.
+
+        Args:
+            problem_front: The problem description/question
+            submitted_code: The code that was submitted
+            error_message: The error or failure message from LeetCode
+
+        Returns:
+            FailureClassification with type and suggested ratings
+
+        Raises:
+            LLMError: If the API call fails or response is invalid
+        """
+        system_prompt = """You are a coding tutor analyzing a failed LeetCode submission.
+
+Classify the failure into one of these types:
+- **conceptual**: Wrong approach entirely (e.g., used brute force when DP was needed)
+- **technique**: Right approach but wrong technique/detail (e.g., wrong data structure)
+- **mechanical**: Right approach and technique but coding bug (e.g., off-by-one, wrong variable)
+- **trivial**: Typo or syntax error
+
+Also suggest FSRS ratings (1=Again, 2=Hard, 3=Good, 4=Easy) for:
+- understanding_rating: how well they understood the approach
+- implementation_rating: how well they implemented it
+
+Format response as JSON:
+{
+  "failure_type": "conceptual|technique|mechanical|trivial",
+  "explanation": "brief explanation of why this classification",
+  "understanding_rating": 1-4,
+  "implementation_rating": 1-4
+}
+
+Only output the JSON, nothing else."""
+
+        user_message = f"""Problem: {problem_front}
+
+Submitted Code:
+```
+{submitted_code}
+```
+
+Error: {error_message}"""
+
+        response = self._get_completion(system_prompt, user_message)
+
+        try:
+            text = response.strip()
+            if text.startswith("```"):
+                lines = text.split("\n")
+                text = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
+
+            data = json.loads(text)
+            return FailureClassification(
+                failure_type=FailureType(data.get("failure_type", "mechanical")),
+                explanation=data.get("explanation", ""),
+                understanding_rating=data.get("understanding_rating", 1),
+                implementation_rating=data.get("implementation_rating", 1),
+            )
+        except (json.JSONDecodeError, ValueError) as e:
+            raise LLMError(f"Failed to parse failure classification: {e}") from e
+
+    def suggest_links(
+        self,
+        card_front: str,
+        card_back: str,
+        card_id: str,
+        candidates: list[dict],
+    ) -> list[LinkSuggestion]:
+        """Suggest links between a target card and candidate cards.
+
+        Args:
+            card_front: Target card's front text
+            card_back: Target card's back text
+            card_id: Target card's ID
+            candidates: List of dicts with keys: id, front, back, type
+
+        Returns:
+            List of LinkSuggestion objects
+
+        Raises:
+            LLMError: If the API call fails or response is invalid
+        """
+        system_prompt = get_link_suggestion_prompt()
+
+        candidate_text = "\n".join(
+            f"- ID: {c['id'][:8]}, Type: {c['type']},"
+            f" Front: {c['front'][:100]}, Back: {c['back'][:100]}"
+            for c in candidates
+        )
+
+        user_message = f"""TARGET CARD (ID: {card_id[:8]}):
+Front: {card_front}
+Back: {card_back}
+
+CANDIDATES:
+{candidate_text}"""
+
+        response = self._get_completion(system_prompt, user_message)
+
+        try:
+            text = response.strip()
+            if text.startswith("```"):
+                lines = text.split("\n")
+                text = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
+
+            data = json.loads(text)
+            if not isinstance(data, list):
+                raise LLMError("Expected a list of link suggestions")
+
+            suggestions = []
+            for item in data:
+                suggestions.append(
+                    LinkSuggestion(
+                        source_id=card_id,
+                        target_id=item.get("candidate_id", ""),
+                        link_type=item.get("link_type", ""),
+                        weight=item.get("weight"),
+                        rationale=item.get("rationale", ""),
+                    )
+                )
+            return suggestions
         except json.JSONDecodeError as e:
             raise LLMError(f"Failed to parse LLM response as JSON: {e}") from e
 

@@ -207,13 +207,33 @@ class ReviewDatabase:
                     new_value TEXT
                 );
 
+                -- Implicit credit from FIRe (Fractional Implicit Repetition)
+                CREATE TABLE IF NOT EXISTS implicit_credit (
+                    card_id TEXT NOT NULL,
+                    source_card_id TEXT NOT NULL,
+                    credit REAL NOT NULL,
+                    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (card_id, source_card_id, applied_at)
+                );
+
                 -- Create indexes
                 CREATE INDEX IF NOT EXISTS idx_review_logs_card_id ON review_logs(card_id);
                 CREATE INDEX IF NOT EXISTS idx_review_logs_reviewed_at ON review_logs(reviewed_at);
                 CREATE INDEX IF NOT EXISTS idx_card_states_due ON card_states(due);
+                CREATE INDEX IF NOT EXISTS idx_implicit_credit_card_id ON implicit_credit(card_id);
             """
             )
+        self._migrate_response_time_column()
         self._migrate_search_index()
+
+    def _migrate_response_time_column(self) -> None:
+        """Add response_time_ms column to review_logs if missing."""
+        with self._connection() as conn:
+            cols = {
+                row["name"] for row in conn.execute("PRAGMA table_info(review_logs)").fetchall()
+            }
+            if "response_time_ms" not in cols:
+                conn.execute("ALTER TABLE review_logs ADD COLUMN response_time_ms INTEGER")
 
     def _migrate_search_index(self) -> None:
         """Ensure card_search FTS5 table has the expected columns.
@@ -316,6 +336,7 @@ class ReviewDatabase:
         difficulty_after: float,
         state_before: str,
         state_after: str,
+        response_time_ms: int | None = None,
     ) -> None:
         """Log a review for FSRS optimizer training."""
         with self._connection() as conn:
@@ -324,8 +345,8 @@ class ReviewDatabase:
                 INSERT INTO review_logs (
                     card_id, reviewed_at, rating, elapsed_days, scheduled_days,
                     stability_before, stability_after, difficulty_before, difficulty_after,
-                    state_before, state_after
-                ) VALUES (?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    state_before, state_after, response_time_ms
+                ) VALUES (?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     card_id,
@@ -338,6 +359,7 @@ class ReviewDatabase:
                     difficulty_after,
                     state_before,
                     state_after,
+                    response_time_ms,
                 ),
             )
 
@@ -525,6 +547,70 @@ class ReviewDatabase:
             if total == 0:
                 return 0.0
             return row["good"] / total
+
+    def log_implicit_credit(self, card_id: str, source_card_id: str, credit: float) -> None:
+        """Log implicit credit from reviewing an encompassing card."""
+        with self._connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO implicit_credit (card_id, source_card_id, credit)
+                VALUES (?, ?, ?)
+                """,
+                (card_id, source_card_id, credit),
+            )
+
+    def get_implicit_credit_since(self, card_id: str, since: str) -> float:
+        """Get total implicit credit for a card since a given ISO timestamp."""
+        with self._connection() as conn:
+            row = conn.execute(
+                """
+                SELECT COALESCE(SUM(credit), 0.0) as total
+                FROM implicit_credit
+                WHERE card_id = ? AND applied_at >= ?
+                """,
+                (card_id, since),
+            ).fetchone()
+            return row["total"]
+
+    def get_response_times(self, card_id: str, limit: int = 10) -> list[int]:
+        """Get recent response times for a card (in ms), most recent first."""
+        with self._connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT response_time_ms FROM review_logs
+                WHERE card_id = ? AND response_time_ms IS NOT NULL
+                ORDER BY id DESC LIMIT ?
+                """,
+                (card_id, limit),
+            ).fetchall()
+            return [row["response_time_ms"] for row in rows]
+
+    def get_automaticity_report(self) -> list[dict]:
+        """Get cards with high stability but slow response times.
+
+        These are cards the user knows but hasn't automated — they
+        answer correctly but slowly.
+        """
+        with self._connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    cs.card_id,
+                    cs.stability,
+                    cs.state,
+                    AVG(rl.response_time_ms) as avg_response_ms,
+                    COUNT(rl.response_time_ms) as response_count
+                FROM card_states cs
+                JOIN review_logs rl ON cs.card_id = rl.card_id
+                WHERE cs.state = 'review'
+                  AND cs.stability >= 10.0
+                  AND rl.response_time_ms IS NOT NULL
+                GROUP BY cs.card_id
+                HAVING avg_response_ms > 5000 AND response_count >= 3
+                ORDER BY avg_response_ms DESC
+                """,
+            ).fetchall()
+            return [dict(row) for row in rows]
 
     def get_stats(self) -> dict:
         """Get review statistics."""

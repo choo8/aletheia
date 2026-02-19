@@ -7,6 +7,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from typer.testing import CliRunner
+
 from aletheia.core.git_sync import (
     GitSyncError,
     _build_sync_message,
@@ -16,7 +18,6 @@ from aletheia.core.git_sync import (
     pull_data_repo,
     sync_data_repo,
 )
-from typer.testing import CliRunner
 
 runner = CliRunner()
 

@@ -143,3 +143,42 @@ def get_edit_extraction_prompt(domain: str) -> str:
 def get_quality_prompt() -> str:
     """Get the quality feedback system prompt."""
     return QUALITY_SYSTEM_PROMPT
+
+
+LINK_SUGGESTION_SYSTEM_PROMPT = """You are a knowledge-graph curator for a spaced repetition system.
+
+Given a TARGET card and a list of CANDIDATE cards, suggest relationships between them.
+
+Available link types:
+- **prerequisite**: target requires understanding the candidate first
+- **leads_to**: studying target naturally leads to the candidate
+- **similar_to**: cards cover similar or overlapping material
+- **contrasts_with**: cards cover opposing or contrasting approaches
+- **applies**: target applies concepts from the candidate
+- **encompasses**: target is a broader/harder card that subsumes the candidate \
+(specify weight 0.0-1.0 indicating how much of the candidate is covered)
+
+Rules:
+1. Only suggest links where there is a genuine pedagogical relationship
+2. Be conservative — don't suggest weak/tenuous connections
+3. For encompasses, weight indicates fraction of the simpler card's knowledge \
+tested by the encompassing card (1.0 = fully covers, 0.3 = partially covers)
+4. Provide a brief rationale for each suggestion
+
+Format your response as JSON:
+[
+  {
+    "target_id": "...",
+    "candidate_id": "...",
+    "link_type": "prerequisite|leads_to|similar_to|contrasts_with|applies|encompasses",
+    "weight": 0.7,
+    "rationale": "why this link exists"
+  }
+]
+
+Only output the JSON array, nothing else. If no links are appropriate, return []."""
+
+
+def get_link_suggestion_prompt() -> str:
+    """Get the link suggestion system prompt."""
+    return LINK_SUGGESTION_SYSTEM_PROMPT

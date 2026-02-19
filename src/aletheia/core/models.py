@@ -1,7 +1,7 @@
 """Pydantic models for Aletheia cards and related entities."""
 
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Annotated
 from uuid import uuid4
 
@@ -13,7 +13,7 @@ def utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-class CardType(str, Enum):
+class CardType(StrEnum):
     """Types of cards supported by Aletheia."""
 
     DSA_PROBLEM = "dsa-problem"
@@ -23,7 +23,7 @@ class CardType(str, Enum):
     RESEARCH = "research"
 
 
-class Maturity(str, Enum):
+class Maturity(StrEnum):
     """Card maturity states."""
 
     ACTIVE = "active"
@@ -31,7 +31,7 @@ class Maturity(str, Enum):
     SUSPENDED = "suspended"
 
 
-class PromptType(str, Enum):
+class PromptType(StrEnum):
     """Types of review prompts."""
 
     FACTUAL = "factual"
@@ -42,7 +42,7 @@ class PromptType(str, Enum):
     BOUNDARY = "boundary"
 
 
-class CreationMode(str, Enum):
+class CreationMode(StrEnum):
     """How a card was created."""
 
     MANUAL = "manual"
@@ -51,7 +51,7 @@ class CreationMode(str, Enum):
     DRAFT_CRITIQUE = "draft-critique"
 
 
-class LinkType(str, Enum):
+class LinkType(StrEnum):
     """Types of relationships between cards."""
 
     SIMILAR_TO = "similar_to"
@@ -59,6 +59,7 @@ class LinkType(str, Enum):
     LEADS_TO = "leads_to"
     APPLIES = "applies"
     CONTRASTS_WITH = "contrasts_with"
+    ENCOMPASSES = "encompasses"
 
 
 class ReviewPrompt(BaseModel):
@@ -100,6 +101,13 @@ class Complexity(BaseModel):
     space: str
 
 
+class WeightedLink(BaseModel):
+    """A weighted link to another card (used for encompasses relationships)."""
+
+    card_id: str
+    weight: float = Field(default=1.0, ge=0.0, le=1.0)
+
+
 class CardLinks(BaseModel):
     """Links to related cards."""
 
@@ -108,6 +116,7 @@ class CardLinks(BaseModel):
     leads_to: list[str] = Field(default_factory=list)
     applies: list[str] = Field(default_factory=list)
     contrasts_with: list[str] = Field(default_factory=list)
+    encompasses: list[WeightedLink] = Field(default_factory=list)
 
 
 class CardLifecycle(BaseModel):
@@ -154,12 +163,20 @@ class Card(BaseModel):
         self.lifecycle.edit_count += 1
 
 
+class DSAProblemSubtype(StrEnum):
+    """Subtypes for DSA problem cards."""
+
+    UNDERSTANDING = "understanding"  # default for existing cards
+    IMPLEMENTATION = "implementation"  # code-focused review
+
+
 class DSAProblemCard(Card):
     """Card for a specific DSA/Leetcode problem."""
 
     type: CardType = CardType.DSA_PROBLEM
 
     # Problem-specific fields
+    card_subtype: DSAProblemSubtype = DSAProblemSubtype.UNDERSTANDING
     problem_source: LeetcodeSource | None = None
     patterns: list[str] = Field(default_factory=list)
     data_structures: list[str] = Field(default_factory=list)
@@ -208,7 +225,7 @@ class SystemDesignCard(Card):
     real_world_examples: list[str] = Field(default_factory=list)
 
 
-class MathCardSubtype(str, Enum):
+class MathCardSubtype(StrEnum):
     """Subtypes for math cards (Nielsen-inspired)."""
 
     DEFINITION = "definition"
@@ -231,7 +248,7 @@ class MathCard(Card):
     last_reformulated: datetime | None = None
 
 
-class ResearchCardSubtype(str, Enum):
+class ResearchCardSubtype(StrEnum):
     """Subtypes for research cards."""
 
     INSIGHT = "insight"

@@ -41,7 +41,7 @@ def init_data_repo(path: Path) -> Path:
 
     # Write .gitignore (temp files only — NOT .aletheia/)
     gitignore = path / ".gitignore"
-    gitignore.write_text("*.swp\n" "*.swo\n" "*~\n" ".DS_Store\n" "__pycache__/\n")
+    gitignore.write_text("*.swp\n*.swo\n*~\n.DS_Store\n__pycache__/\n")
 
     # Initialize git repo
     result = _run_git(["init"], cwd=path)
@@ -152,9 +152,7 @@ def pull_data_repo(data_dir: Path) -> str:
 
     if not _has_remote(git_root):
         raise GitSyncError(
-            "No remote configured. Add one with:\n"
-            f"  cd {git_root}\n"
-            "  git remote add origin <url>"
+            f"No remote configured. Add one with:\n  cd {git_root}\n  git remote add origin <url>"
         )
 
     result = _run_git(["pull", "--ff-only"], cwd=git_root)

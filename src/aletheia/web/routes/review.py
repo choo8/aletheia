@@ -1,12 +1,15 @@
 """Review routes with HTMX support."""
 
+import time
+
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 
 from aletheia.core.models import Maturity
+from aletheia.core.queue import QueueBuilder
 from aletheia.core.scheduler import AletheiaScheduler, ReviewRating
 from aletheia.core.storage import AletheiaStorage
-from aletheia.web.dependencies import get_scheduler, get_storage, get_templates
+from aletheia.web.dependencies import get_queue_builder, get_scheduler, get_storage, get_templates
 
 router = APIRouter()
 
@@ -23,14 +26,15 @@ async def review_session(
     request: Request,
     storage: AletheiaStorage = Depends(get_storage),
     scheduler: AletheiaScheduler = Depends(get_scheduler),
+    queue_builder: QueueBuilder = Depends(get_queue_builder),
 ):
     """Start or continue review session."""
     templates = get_templates()
 
-    # Get cards to review
+    # Get cards to review using queue builder
     due_cards = scheduler.get_due_cards(limit=20)
     new_cards = scheduler.get_new_cards(limit=5)
-    card_ids = due_cards + [c for c in new_cards if c not in due_cards]
+    card_ids = queue_builder.build_queue(due_cards, new_cards, new_limit=5)
     card_ids = _filter_active(storage, card_ids)
 
     if not card_ids:
@@ -80,6 +84,7 @@ async def reveal_answer(
             "card": card,
             "show_answer": True,
             "remaining": len(card_ids),
+            "reveal_ts": time.monotonic(),
         },
     )
 
@@ -89,19 +94,28 @@ async def rate_card(
     card_id: str,
     request: Request,
     rating: int = Form(...),
+    reveal_ts: float = Form(default=0.0),
     storage: AletheiaStorage = Depends(get_storage),
     scheduler: AletheiaScheduler = Depends(get_scheduler),
+    queue_builder: QueueBuilder = Depends(get_queue_builder),
 ):
     """Rate a card and show next (HTMX partial)."""
     templates = get_templates()
 
-    # Process rating
-    scheduler.review_card(card_id, ReviewRating(rating))
+    # Compute response time from reveal timestamp
+    response_time_ms = None
+    if reveal_ts > 0:
+        response_time_ms = int((time.monotonic() - reveal_ts) * 1000)
+        if response_time_ms < 0:
+            response_time_ms = None
 
-    # Get next card
+    # Process rating
+    scheduler.review_card(card_id, ReviewRating(rating), response_time_ms=response_time_ms)
+
+    # Get next card using queue builder
     due_cards = scheduler.get_due_cards(limit=20)
     new_cards = scheduler.get_new_cards(limit=5)
-    card_ids = due_cards + [c for c in new_cards if c not in due_cards]
+    card_ids = queue_builder.build_queue(due_cards, new_cards, new_limit=5)
     card_ids = _filter_active(storage, card_ids)
 
     if not card_ids:

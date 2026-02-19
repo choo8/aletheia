@@ -1,14 +1,18 @@
 """Tests for Aletheia models."""
 
 import pytest
+
 from aletheia.core.models import (
+    CardLinks,
     CardType,
     Complexity,
     DSAConceptCard,
     DSAProblemCard,
     LeetcodeSource,
+    LinkType,
     Maturity,
     SystemDesignCard,
+    WeightedLink,
     card_from_dict,
 )
 
@@ -188,3 +192,78 @@ class TestLeetcodeSource:
         restored = card_from_dict(data)
         assert restored.problem_source.language == "python3"
         assert restored.problem_source.internal_question_id == "317"
+
+
+class TestWeightedLink:
+    """Tests for WeightedLink model."""
+
+    def test_default_weight(self):
+        link = WeightedLink(card_id="abc-123")
+        assert link.weight == 1.0
+
+    def test_custom_weight(self):
+        link = WeightedLink(card_id="abc-123", weight=0.5)
+        assert link.weight == 0.5
+
+    def test_weight_bounds(self):
+        with pytest.raises(Exception):
+            WeightedLink(card_id="abc", weight=-0.1)
+        with pytest.raises(Exception):
+            WeightedLink(card_id="abc", weight=1.1)
+
+    def test_round_trip(self):
+        link = WeightedLink(card_id="abc-123", weight=0.7)
+        data = link.model_dump()
+        restored = WeightedLink.model_validate(data)
+        assert restored.card_id == "abc-123"
+        assert restored.weight == 0.7
+
+
+class TestCardLinksEncompasses:
+    """Tests for CardLinks.encompasses field."""
+
+    def test_default_empty(self):
+        links = CardLinks()
+        assert links.encompasses == []
+
+    def test_with_encompasses(self):
+        links = CardLinks(
+            encompasses=[
+                WeightedLink(card_id="a", weight=0.5),
+                WeightedLink(card_id="b", weight=1.0),
+            ]
+        )
+        assert len(links.encompasses) == 2
+        assert links.encompasses[0].card_id == "a"
+
+    def test_backward_compat_no_encompasses_field(self):
+        """Existing JSON without encompasses should deserialize fine."""
+        data = {
+            "similar_to": [],
+            "prerequisite": ["id-1"],
+            "leads_to": [],
+            "applies": [],
+            "contrasts_with": [],
+        }
+        links = CardLinks.model_validate(data)
+        assert links.prerequisite == ["id-1"]
+        assert links.encompasses == []
+
+    def test_card_with_encompasses_round_trip(self):
+        card = DSAProblemCard(
+            front="Q",
+            back="A",
+            links=CardLinks(encompasses=[WeightedLink(card_id="child-1", weight=0.6)]),
+        )
+        data = card.model_dump(mode="json")
+        restored = card_from_dict(data)
+        assert len(restored.links.encompasses) == 1
+        assert restored.links.encompasses[0].card_id == "child-1"
+        assert restored.links.encompasses[0].weight == 0.6
+
+
+class TestLinkTypeEnum:
+    """Tests for LinkType enum."""
+
+    def test_encompasses_exists(self):
+        assert LinkType.ENCOMPASSES == "encompasses"

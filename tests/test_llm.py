@@ -3,6 +3,7 @@
 from unittest.mock import patch
 
 import pytest
+
 from aletheia.llm import LLMError, LLMService, QualityFeedback, QualityIssue
 from aletheia.llm.prompts import (
     DOMAIN_TEMPLATES,

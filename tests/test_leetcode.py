@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from aletheia.leetcode.auth import (
     LeetCodeAuthError,
     LeetCodeCredentials,
