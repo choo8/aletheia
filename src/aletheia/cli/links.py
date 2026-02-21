@@ -243,14 +243,17 @@ def links_suggest(
 
 
 @links_app.command("health")
-def links_health() -> None:
+def links_health(
+    fix: bool = typer.Option(False, "--fix", help="Fix resolvable partial IDs"),
+) -> None:
     """Check graph health: orphans, broken links, cycles."""
     storage = get_storage()
     graph = KnowledgeGraph(storage)
     all_cards = storage.list_cards()
     card_ids = {c.id for c in all_cards}
 
-    broken = []
+    truly_broken: list[tuple[str, str]] = []
+    partial_ids: list[tuple[str, str, str]] = []  # (source_id, partial, full)
     cycle_suspects = []
 
     for card in all_cards:
@@ -265,7 +268,11 @@ def links_health() -> None:
         )
         for lid in all_link_ids:
             if lid not in card_ids:
-                broken.append((card.id, lid))
+                resolved = storage.resolve_card_id(lid)
+                if resolved is not None:
+                    partial_ids.append((card.id, lid, resolved))
+                else:
+                    truly_broken.append((card.id, lid))
 
         # Check for self-referencing prerequisite cycles
         if card.id in card.links.prerequisite:
@@ -281,17 +288,34 @@ def links_health() -> None:
     table.add_row("Total Edges", str(stats["total_edges"]))
     table.add_row("Orphan Cards", str(stats["orphans"]))
     table.add_row("Max Prereq Depth", str(stats["max_depth"]))
-    table.add_row("Broken Links", str(len(broken)))
+    table.add_row("Broken Links", str(len(truly_broken)))
+    table.add_row("Partial IDs (resolvable)", str(len(partial_ids)))
     table.add_row("Self-Referencing Cycles", str(len(cycle_suspects)))
 
     from rich.console import Console
 
     Console().print(table)
 
-    if broken:
+    if truly_broken:
         rprint("\n[yellow]Broken links:[/yellow]")
-        for source_id, target_id in broken:
+        for source_id, target_id in truly_broken:
             rprint(f"  {source_id[:8]} → {target_id[:8]} (missing)")
+
+    if partial_ids:
+        rprint("\n[yellow]Partial IDs (resolvable):[/yellow]")
+        for source_id, partial, full in partial_ids:
+            rprint(f"  {source_id[:8]} → {partial} => {full[:8]}")
+
+    if fix and partial_ids:
+        # Re-save affected cards — _normalize_link_ids runs in save_card
+        fixed_sources = {src for src, _, _ in partial_ids}
+        for src_id in fixed_sources:
+            card = storage.load_card(src_id)
+            if card:
+                storage.save_card(card)
+        n_partial = len(partial_ids)
+        n_cards = len(fixed_sources)
+        rprint(f"\n[green]Fixed {n_partial} partial ID(s) in {n_cards} card(s).[/green]")
 
     if cycle_suspects:
         rprint("\n[yellow]Self-referencing cards:[/yellow]")

@@ -652,8 +652,32 @@ class AletheiaStorage:
         self.cards = CardStorage(data_dir)
         self.db = ReviewDatabase(state_dir / "aletheia.db")
 
+    def resolve_card_id(self, partial_id: str) -> str | None:
+        """Resolve a partial card ID to a full UUID via prefix match.
+
+        Returns the full ID if exactly one card matches, else ``None``.
+        """
+        if self.load_card(partial_id) is not None:
+            return partial_id  # already a full ID
+        matches = [c.id for c in self.list_cards() if c.id.startswith(partial_id)]
+        return matches[0] if len(matches) == 1 else None
+
+    def _normalize_link_ids(self, card: AnyCard) -> None:
+        """Replace partial link IDs with full UUIDs where resolvable."""
+        for field in ("prerequisite", "leads_to", "similar_to", "contrasts_with", "applies"):
+            id_list: list[str] = getattr(card.links, field)
+            for i, lid in enumerate(id_list):
+                resolved = self.resolve_card_id(lid)
+                if resolved is not None and resolved != lid:
+                    id_list[i] = resolved
+        for wl in card.links.encompasses:
+            resolved = self.resolve_card_id(wl.card_id)
+            if resolved is not None and resolved != wl.card_id:
+                wl.card_id = resolved
+
     def save_card(self, card: AnyCard) -> Path:
         """Save a card and index it."""
+        self._normalize_link_ids(card)
         path = self.cards.save(card)
         self.db.index_card(card)
 

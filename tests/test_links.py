@@ -157,6 +157,71 @@ class TestGraphHealthCheck:
         assert reloaded.id in reloaded.links.prerequisite
 
 
+class TestLinksHealthPartialIds:
+    """Tests for partial ID detection and --fix in links health."""
+
+    def test_health_distinguishes_partial_from_broken(self, storage):
+        """Partial IDs are resolvable; truly broken are not."""
+        target = DSAProblemCard(front="Target", back="T")
+        storage.save_card(target)
+
+        # Card with one partial ID and one truly broken ID
+        card = DSAProblemCard(
+            front="Q",
+            back="A",
+            links=CardLinks(
+                prerequisite=[target.id[:8], "nonexistent-id"],
+            ),
+        )
+        # Save with normalization disabled by writing JSON directly
+        # so the partial ID persists
+        storage.cards.save(card)
+        storage.db.index_card(card)
+
+        all_cards = storage.list_cards()
+        card_ids = {c.id for c in all_cards}
+
+        truly_broken = []
+        partial_ids = []
+        for c in all_cards:
+            for lid in c.links.prerequisite:
+                if lid not in card_ids:
+                    resolved = storage.resolve_card_id(lid)
+                    if resolved is not None:
+                        partial_ids.append((c.id, lid, resolved))
+                    else:
+                        truly_broken.append((c.id, lid))
+
+        assert len(partial_ids) == 1
+        assert partial_ids[0][2] == target.id
+        assert len(truly_broken) == 1
+        assert truly_broken[0][1] == "nonexistent-id"
+
+    def test_fix_resolves_partial_ids(self, storage):
+        """Re-saving a card normalizes partial IDs to full UUIDs."""
+        target = DSAProblemCard(front="Target", back="T")
+        storage.save_card(target)
+
+        card = DSAProblemCard(
+            front="Q",
+            back="A",
+            links=CardLinks(prerequisite=[target.id[:8]]),
+        )
+        # Bypass normalization by writing directly
+        storage.cards.save(card)
+        storage.db.index_card(card)
+
+        # Verify the partial ID persists
+        before = storage.load_card(card.id)
+        assert before.links.prerequisite == [target.id[:8]]
+
+        # "Fix" by re-saving through AletheiaStorage
+        storage.save_card(before)
+
+        after = storage.load_card(card.id)
+        assert after.links.prerequisite == [target.id]
+
+
 class TestLLMSuggestLinksIntegration:
     def test_suggest_links_parses_response(self):
         """Test that suggest_links correctly parses LLM JSON response."""

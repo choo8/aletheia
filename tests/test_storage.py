@@ -5,7 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from aletheia.core.models import CardType, DSAConceptCard, DSAProblemCard, SystemDesignCard
+from aletheia.core.models import (
+    CardLinks,
+    CardType,
+    DSAConceptCard,
+    DSAProblemCard,
+    SystemDesignCard,
+    WeightedLink,
+)
 from aletheia.core.storage import AletheiaStorage, CardStorage, ReviewDatabase
 
 
@@ -158,6 +165,90 @@ class TestReviewDatabase:
         assert "total_reviews" in stats
         assert "due_today" in stats
         assert "new_cards" in stats
+
+
+class TestResolveCardId:
+    """Tests for AletheiaStorage.resolve_card_id."""
+
+    def test_full_id_returns_itself(self, storage):
+        card = DSAProblemCard(front="Q", back="A")
+        storage.save_card(card)
+        assert storage.resolve_card_id(card.id) == card.id
+
+    def test_unique_prefix_resolves(self, storage):
+        card = DSAProblemCard(front="Q", back="A")
+        storage.save_card(card)
+        prefix = card.id[:8]
+        assert storage.resolve_card_id(prefix) == card.id
+
+    def test_ambiguous_prefix_returns_none(self, storage):
+        # Create two cards and use an empty prefix that matches both
+        a = DSAProblemCard(front="A", back="A")
+        b = DSAProblemCard(front="B", back="B")
+        storage.save_card(a)
+        storage.save_card(b)
+        # Empty string matches all cards — ambiguous
+        assert storage.resolve_card_id("") is None
+
+    def test_nonexistent_returns_none(self, storage):
+        assert storage.resolve_card_id("zzz-no-match") is None
+
+
+class TestNormalizeLinkIds:
+    """Tests for partial ID normalization on save."""
+
+    def test_partial_prerequisite_normalized(self, storage):
+        target = DSAProblemCard(front="Target", back="T")
+        storage.save_card(target)
+
+        source = DSAProblemCard(
+            front="Source",
+            back="S",
+            links=CardLinks(prerequisite=[target.id[:8]]),
+        )
+        storage.save_card(source)
+
+        reloaded = storage.load_card(source.id)
+        assert reloaded.links.prerequisite == [target.id]
+
+    def test_partial_encompasses_normalized(self, storage):
+        target = DSAProblemCard(front="Target", back="T")
+        storage.save_card(target)
+
+        source = DSAProblemCard(
+            front="Source",
+            back="S",
+            links=CardLinks(encompasses=[WeightedLink(card_id=target.id[:8], weight=0.5)]),
+        )
+        storage.save_card(source)
+
+        reloaded = storage.load_card(source.id)
+        assert reloaded.links.encompasses[0].card_id == target.id
+
+    def test_unresolvable_id_left_unchanged(self, storage):
+        source = DSAProblemCard(
+            front="Source",
+            back="S",
+            links=CardLinks(prerequisite=["nonexistent"]),
+        )
+        storage.save_card(source)
+
+        reloaded = storage.load_card(source.id)
+        assert reloaded.links.prerequisite == ["nonexistent"]
+
+    def test_full_id_left_unchanged(self, storage):
+        target = DSAProblemCard(front="Target", back="T")
+        storage.save_card(target)
+
+        source = DSAProblemCard(
+            front="Source",
+            back="S",
+            links=CardLinks(prerequisite=[target.id]),
+        )
+        storage.save_card(source)
+
+        reloaded = storage.load_card(source.id)
+        assert reloaded.links.prerequisite == [target.id]
 
 
 class TestAletheiaStorage:
