@@ -2,6 +2,7 @@
 
 import json
 import os
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -14,7 +15,11 @@ from rich.table import Table
 
 from aletheia.cli.helpers import find_card, get_storage, open_in_editor
 from aletheia.cli.leetcode import leetcode_app
+from aletheia.cli.links import links_app
+from aletheia.core.fire import FIReEngine
 from aletheia.core.git_sync import GitSyncError, init_data_repo, pull_data_repo, sync_data_repo
+from aletheia.core.graph import KnowledgeGraph
+from aletheia.core.metrics import ProgressMetrics
 from aletheia.core.models import (
     AnyCard,
     CardType,
@@ -28,6 +33,7 @@ from aletheia.core.models import (
     card_from_dict,
     utcnow,
 )
+from aletheia.core.queue import QueueBuilder
 from aletheia.core.scheduler import AletheiaScheduler, ReviewRating
 from aletheia.core.storage import AletheiaStorage
 from aletheia.llm import LLMError, LLMService
@@ -42,6 +48,14 @@ app = typer.Typer(
 
 # Register LeetCode subcommands
 app.add_typer(leetcode_app, name="leetcode")
+
+# Register Links subcommands
+app.add_typer(links_app, name="links")
+
+# Graph subcommand group
+graph_app = typer.Typer(help="Knowledge graph queries and statistics.")
+app.add_typer(graph_app, name="graph")
+
 console = Console()
 
 
@@ -560,6 +574,27 @@ def _display_card(card, full: bool = False, review_state: dict | None = None) ->
         if hasattr(card, "intuition") and card.intuition:
             content += f"\n\n[bold]Intuition:[/bold] {card.intuition}"
 
+        # Links
+        links = card.links
+        link_parts = []
+        if links.prerequisite:
+            link_parts.append(f"Prerequisites: {', '.join(i[:8] for i in links.prerequisite)}")
+        if links.leads_to:
+            link_parts.append(f"Leads to: {', '.join(i[:8] for i in links.leads_to)}")
+        if links.similar_to:
+            link_parts.append(f"Similar to: {', '.join(i[:8] for i in links.similar_to)}")
+        if links.contrasts_with:
+            link_parts.append(f"Contrasts with: {', '.join(i[:8] for i in links.contrasts_with)}")
+        if links.applies:
+            link_parts.append(f"Applies: {', '.join(i[:8] for i in links.applies)}")
+        if links.encompasses:
+            enc_strs = [f"{wl.card_id[:8]}(w={wl.weight})" for wl in links.encompasses]
+            link_parts.append(f"Encompasses: {', '.join(enc_strs)}")
+        if link_parts:
+            content += "\n\n[bold]Links:[/bold]\n" + "\n".join(
+                f"  [dim]{p}[/dim]" for p in link_parts
+            )
+
         # FSRS review scheduling info
         content += _format_review_info(review_state)
 
@@ -954,6 +989,19 @@ def stats() -> None:
         for domain, count in sorted(by_domain.items()):
             table.add_row(f"  {domain}", str(count))
 
+    # Progress metrics
+    metrics = ProgressMetrics(storage)
+    mastery = metrics.mastery_percentage()
+    velocity = metrics.learning_velocity()
+    table.add_row("", "")
+    table.add_row("[bold]Progress[/bold]", "")
+    table.add_row("  Mastery", f"{mastery:.0%}")
+    table.add_row("  Learning Velocity", f"{velocity:.1f} cards/week")
+
+    auto_candidates = metrics.automaticity_candidates()
+    if auto_candidates:
+        table.add_row("  Automaticity Candidates", str(len(auto_candidates)))
+
     console.print(table)
 
 
@@ -1103,13 +1151,14 @@ def review(
     """Start an interactive review session."""
     storage = get_storage()
     scheduler = AletheiaScheduler(storage.db)
+    graph = KnowledgeGraph(storage)
+    fire_engine = FIReEngine(storage, graph)
+    queue_builder = QueueBuilder(storage, graph, fire_engine=fire_engine)
 
-    # Get cards to review: due cards + new cards
+    # Get cards to review using queue builder (prerequisite-aware)
     due_ids = scheduler.get_due_cards(limit)
     new_ids = scheduler.get_new_cards(new_cards)
-
-    # Combine, avoiding duplicates
-    card_ids = due_ids + [c for c in new_ids if c not in due_ids]
+    card_ids = queue_builder.build_queue(due_ids, new_ids, new_limit=new_cards)
 
     # Filter out non-active cards (suspended/exhausted)
     card_ids = [
@@ -1138,6 +1187,7 @@ def review(
 
         # Wait for reveal
         typer.prompt("\n[Press Enter to reveal answer]", default="", show_default=False)
+        reveal_time = time.monotonic()
 
         # Display answer
         console.print(Panel(card.back, title="Answer", border_style="green"))
@@ -1152,9 +1202,42 @@ def review(
             rprint("\n[yellow]Session ended early.[/yellow]")
             break
 
+        # Compute response time (time from reveal to rating)
+        response_time_ms = int((time.monotonic() - reveal_time) * 1000)
+
         # Process review
-        result = scheduler.review_card(card_id, rating)
-        rprint(f"[dim]Next review: {result.due_next.strftime('%Y-%m-%d %H:%M')}[/dim]\n")
+        result = scheduler.review_card(card_id, rating, response_time_ms=response_time_ms)
+        rprint(f"[dim]Next review: {result.due_next.strftime('%Y-%m-%d %H:%M')}[/dim]")
+
+        # FIRe: propagate credit to encompassed cards
+        fire_credits = fire_engine.propagate_credit(card_id, rating.value)
+        if fire_credits:
+            rprint(
+                f"[dim]Implicit credit propagated to {len(fire_credits)} encompassed card(s)[/dim]"
+            )
+
+        # FIRe: on AGAIN, propagate penalty upward
+        if rating == ReviewRating.AGAIN:
+            penalized = fire_engine.propagate_penalty(card_id)
+            if penalized:
+                rprint(
+                    f"[yellow]Penalty flagged for {len(penalized)} encompassing card(s)[/yellow]"
+                )
+
+        # On AGAIN, suggest remediation
+        if rating == ReviewRating.AGAIN:
+            remediation = scheduler.get_remediation_cards(card_id, graph)
+            if remediation:
+                rprint(
+                    f"[yellow]Suggested remediation: {len(remediation)}"
+                    " prerequisite(s) may need review[/yellow]"
+                )
+                for rid in remediation:
+                    rcard = storage.load_card(rid)
+                    if rcard:
+                        rprint(f"  [dim]{rid[:8]}: {rcard.front[:50]}[/dim]")
+
+        rprint("")
         reviewed += 1
 
     # Session summary
@@ -1616,6 +1699,115 @@ def serve(
         port=port,
         reload=reload,
     )
+
+
+# ============================================================================
+# GRAPH commands
+# ============================================================================
+
+
+@graph_app.command("frontier")
+def graph_frontier(
+    min_stability: float = typer.Option(
+        5.0,
+        "--min-stability",
+        "-s",
+        help="Minimum stability for a prerequisite to count as mastered",
+    ),
+) -> None:
+    """Show cards ready to learn (prerequisites mastered)."""
+    storage = get_storage()
+    graph = KnowledgeGraph(storage)
+    frontier = graph.get_knowledge_frontier(min_stability)
+
+    if not frontier:
+        rprint("[dim]No cards on the knowledge frontier.[/dim]")
+        return
+
+    table = Table(title=f"Knowledge Frontier ({len(frontier)} cards)")
+    table.add_column("ID", style="dim", max_width=8)
+    table.add_column("Type", style="cyan")
+    table.add_column("Front", max_width=50)
+    table.add_column("Prerequisites", style="green")
+
+    for card in frontier:
+        prereq_count = len(card.links.prerequisite)
+        prereq_str = str(prereq_count) if prereq_count > 0 else "none"
+        table.add_row(
+            card.id[:8],
+            card.type.value,
+            card.front[:50] + "..." if len(card.front) > 50 else card.front,
+            prereq_str,
+        )
+
+    console.print(table)
+
+
+@graph_app.command("prereqs")
+def graph_prereqs(
+    card_id: str = typer.Argument(..., help="Card ID (or partial ID)"),
+    transitive: bool = typer.Option(
+        False,
+        "--transitive",
+        "-t",
+        help="Show full transitive prerequisite chain",
+    ),
+) -> None:
+    """Show prerequisite chain for a card."""
+    storage = get_storage()
+    graph = KnowledgeGraph(storage)
+    card = _require_card(storage, card_id)
+
+    if transitive:
+        prereqs = graph.get_transitive_prerequisites(card.id)
+        title = f"Transitive Prerequisites for {card.id[:8]}"
+    else:
+        prereqs = graph.get_prerequisites(card.id)
+        title = f"Direct Prerequisites for {card.id[:8]}"
+
+    if not prereqs:
+        rprint(f"[dim]No prerequisites for {card.id[:8]}.[/dim]")
+        return
+
+    table = Table(title=title)
+    table.add_column("ID", style="dim", max_width=8)
+    table.add_column("Type", style="cyan")
+    table.add_column("Front", max_width=50)
+    table.add_column("State", style="green")
+    table.add_column("Stability", justify="right")
+
+    for prereq in prereqs:
+        state = storage.db.get_card_state(prereq.id)
+        state_str = state.get("state", "?") if state else "?"
+        stability_str = f"{state.get('stability', 0):.1f}" if state else "?"
+        table.add_row(
+            prereq.id[:8],
+            prereq.type.value,
+            prereq.front[:50] + "..." if len(prereq.front) > 50 else prereq.front,
+            state_str,
+            stability_str,
+        )
+
+    console.print(table)
+
+
+@graph_app.command("stats")
+def graph_stats() -> None:
+    """Show knowledge graph statistics."""
+    storage = get_storage()
+    graph = KnowledgeGraph(storage)
+    stats_data = graph.get_graph_stats()
+
+    table = Table(title="Knowledge Graph Statistics")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", justify="right")
+
+    table.add_row("Total Nodes", str(stats_data["total_nodes"]))
+    table.add_row("Total Edges", str(stats_data["total_edges"]))
+    table.add_row("Orphan Cards", str(stats_data["orphans"]))
+    table.add_row("Max Prereq Depth", str(stats_data["max_depth"]))
+
+    console.print(table)
 
 
 # ============================================================================

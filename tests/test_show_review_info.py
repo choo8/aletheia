@@ -6,11 +6,12 @@ from io import StringIO
 from pathlib import Path
 
 import pytest
+from rich.console import Console
+
 from aletheia.cli.main import _display_card, _format_review_info
 from aletheia.core.models import DSAProblemCard
 from aletheia.core.scheduler import AletheiaScheduler, ReviewRating
 from aletheia.core.storage import AletheiaStorage
-from rich.console import Console
 
 
 @pytest.fixture

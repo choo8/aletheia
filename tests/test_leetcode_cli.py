@@ -4,12 +4,13 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from typer.testing import CliRunner
+
 from aletheia.cli.main import app
 from aletheia.core.models import DSAProblemCard, LeetcodeSource
 from aletheia.core.storage import AletheiaStorage
 from aletheia.leetcode.auth import LeetCodeAuthError, LeetCodeCredentials, save_credentials
 from aletheia.leetcode.service import LeetCodeError, SubmissionResult, TestResult
-from typer.testing import CliRunner
 
 runner = CliRunner()
 

@@ -5,10 +5,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from fsrs import State
+
 from aletheia.core.models import DSAProblemCard
 from aletheia.core.scheduler import AletheiaScheduler, CardState, ReviewRating, ReviewResult
 from aletheia.core.storage import AletheiaStorage
-from fsrs import State
 
 
 @pytest.fixture

@@ -5,6 +5,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from fastapi.testclient import TestClient
+
 from aletheia.core.models import (
     DSAConceptCard,
     DSAProblemCard,
@@ -12,7 +14,6 @@ from aletheia.core.models import (
 )
 from aletheia.core.storage import AletheiaStorage, ReviewDatabase
 from aletheia.web.app import create_app
-from fastapi.testclient import TestClient
 
 
 @pytest.fixture

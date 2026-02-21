@@ -181,8 +181,7 @@ def submit(
 
         if not test_result.passed:
             rprint(
-                f"[red]Tests failed[/red] "
-                f"({test_result.passed_cases}/{test_result.total_cases})"
+                f"[red]Tests failed[/red] ({test_result.passed_cases}/{test_result.total_cases})"
             )
             if test_result.runtime_error:
                 rprint(f"[red]Runtime error:[/red] {test_result.runtime_error}")
@@ -190,8 +189,7 @@ def submit(
             raise typer.Exit(1)
 
         rprint(
-            f"[green]Tests passed[/green] "
-            f"({test_result.passed_cases}/{test_result.total_cases})"
+            f"[green]Tests passed[/green] ({test_result.passed_cases}/{test_result.total_cases})"
         )
 
     # Confirm submission
@@ -381,6 +379,158 @@ def _require_dsa_card(storage, card_id: str) -> DSAProblemCard:
         raise typer.Exit(1)
 
     return card
+
+
+@leetcode_app.command("review-submit")
+def review_submit(
+    card_id: str = typer.Argument(..., help="Card ID (or partial ID)"),
+) -> None:
+    """Submit code as a review: write solution from memory, submit, and auto-rate.
+
+    1. Show problem description
+    2. Open editor with starter code
+    3. Submit to LeetCode
+    4. If accepted: auto-rate GOOD/EASY, FIRe cascades credit
+    5. If failed: LLM classifies failure type, differentiated ratings
+    """
+    storage = get_storage()
+    card = _require_dsa_card(storage, card_id)
+
+    if not card.problem_source:
+        rprint("[red]Card has no problem_source set.[/red]")
+        raise typer.Exit(1)
+
+    # Get credentials and service
+    state_dir = _get_state_dir()
+    creds = get_credentials(state_dir)
+    if creds is None:
+        rprint("[red]Not logged in. Run: aletheia leetcode login[/red]")
+        raise typer.Exit(1)
+
+    try:
+        service = LeetCodeService(creds)
+    except LeetCodeError as e:
+        rprint(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    # Resolve question details
+    title_slug = _get_title_slug(card)
+    question_id = card.problem_source.internal_question_id
+
+    if not question_id:
+        rprint("[dim]Resolving question ID...[/dim]")
+        try:
+            question_id = service.resolve_question_id(
+                card.problem_source.platform_id, title_slug=title_slug
+            )
+            card.problem_source.internal_question_id = question_id
+            storage.save_card(card)
+        except LeetCodeError as e:
+            rprint(f"[red]{e}[/red]")
+            raise typer.Exit(1)
+
+    # Show problem front
+    rprint(f"\n[bold]Problem:[/bold] {card.front}\n")
+
+    # Determine language
+    lang_slug = (card.problem_source.language if card.problem_source else None) or "python3"
+    slug_to_ext = _get_slug_to_ext()
+    suffix = slug_to_ext.get(lang_slug, ".py")
+
+    # Fetch starter code (without showing existing solution)
+    starter = _fetch_editor_content(card, lang_slug)
+    # Strip any existing solution to force recall
+    if starter:
+        # Keep only the comment block (problem description) and starter template
+        rprint("[dim]Opening editor with starter code...[/dim]")
+    else:
+        rprint("[dim]Opening editor...[/dim]")
+
+    code = open_in_editor(starter, suffix=suffix)
+    if not code.strip():
+        rprint("[yellow]Empty code — review cancelled.[/yellow]")
+        return
+
+    # Submit
+    with console.status("[bold cyan]Submitting...[/bold cyan]"):
+        try:
+            result = service.submit_solution(title_slug, question_id, code, lang_slug)
+        except LeetCodeError as e:
+            rprint(f"[red]Submission failed: {e}[/red]")
+            raise typer.Exit(1)
+
+    # Import scheduler and FIRe for rating
+    from aletheia.core.fire import FIReEngine
+    from aletheia.core.graph import KnowledgeGraph
+    from aletheia.core.scheduler import AletheiaScheduler, ReviewRating
+
+    scheduler = AletheiaScheduler(storage.db)
+    graph = KnowledgeGraph(storage)
+    fire = FIReEngine(storage, graph)
+
+    if result.passed:
+        rprint("\n[bold green]Accepted![/bold green]")
+        if result.runtime_ms is not None:
+            rprint(f"  Runtime: {result.runtime_ms} ms")
+
+        # Auto-rate: GOOD by default, EASY if fast
+        rating = ReviewRating.GOOD
+        if result.runtime_percentile and result.runtime_percentile > 80:
+            rating = ReviewRating.EASY
+
+        review_result = scheduler.review_card(card.id, rating)
+        due_str = review_result.due_next.strftime("%Y-%m-%d")
+        rprint(f"[dim]Auto-rated: {rating.name} → Next review: {due_str}[/dim]")
+
+        # FIRe credit propagation
+        fire_credits = fire.propagate_credit(card.id, rating.value)
+        if fire_credits:
+            rprint(f"[dim]Implicit credit propagated to {len(fire_credits)} card(s)[/dim]")
+    else:
+        rprint(f"\n[red]{result.status}[/red]")
+        if result.error_message:
+            rprint(f"  Error: {result.error_message}")
+
+        # LLM failure classification
+        try:
+            from aletheia.llm import LLMService
+
+            llm = LLMService()
+            classification = llm.classify_failure(
+                card.front, code, result.error_message or result.status
+            )
+            rprint(f"\n[yellow]Failure type: {classification.failure_type.value}[/yellow]")
+            rprint(f"[dim]{classification.explanation}[/dim]")
+
+            # Apply differentiated ratings
+            understanding_rating = ReviewRating(classification.understanding_rating)
+            impl_rating = ReviewRating(classification.implementation_rating)
+
+            u_name = understanding_rating.name
+            rprint(f"[dim]Understanding → {u_name}, Implementation → {impl_rating.name}[/dim]")
+
+            # Rate the current card
+            review_result = scheduler.review_card(card.id, impl_rating)
+            rprint(f"[dim]Next review: {review_result.due_next.strftime('%Y-%m-%d')}[/dim]")
+
+            # Offer resubmit for mechanical/trivial failures
+            if classification.failure_type.value in ("mechanical", "trivial"):
+                if typer.confirm("\nResubmit (fix the bug)?", default=True):
+                    rprint("[dim]Opening editor to fix...[/dim]")
+                    fixed_code = open_in_editor(code, suffix=suffix)
+                    if fixed_code.strip():
+                        with console.status("[bold cyan]Resubmitting...[/bold cyan]"):
+                            retry = service.submit_solution(
+                                title_slug, question_id, fixed_code, lang_slug
+                            )
+                        if retry.passed:
+                            rprint("[bold green]Accepted on retry![/bold green]")
+                        else:
+                            rprint(f"[red]Still failing: {retry.status}[/red]")
+        except (ImportError, Exception) as e:
+            rprint(f"[dim]Could not classify failure: {e}[/dim]")
+            # Fall back to AGAIN rating
+            scheduler.review_card(card.id, ReviewRating.AGAIN)
 
 
 def _get_title_slug(card: DSAProblemCard) -> str:

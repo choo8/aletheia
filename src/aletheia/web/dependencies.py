@@ -6,6 +6,8 @@ from pathlib import Path
 
 from fastapi.templating import Jinja2Templates
 
+from aletheia.core.graph import KnowledgeGraph
+from aletheia.core.queue import QueueBuilder
 from aletheia.core.scheduler import AletheiaScheduler
 from aletheia.core.storage import AletheiaStorage
 from aletheia.web.katex import setup_katex_filter
@@ -24,6 +26,18 @@ def get_scheduler() -> AletheiaScheduler:
     """Get the scheduler instance (singleton)."""
     storage = get_storage()
     return AletheiaScheduler(storage.db)
+
+
+@lru_cache
+def get_graph() -> KnowledgeGraph:
+    """Get the knowledge graph instance (singleton)."""
+    return KnowledgeGraph(get_storage())
+
+
+@lru_cache
+def get_queue_builder() -> QueueBuilder:
+    """Get the queue builder instance (singleton)."""
+    return QueueBuilder(get_storage(), get_graph())
 
 
 @lru_cache
